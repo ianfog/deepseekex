@@ -11,3 +11,8 @@ build/*
 .env.*
 *.local
 .npmrc
+
+# IDE / 编辑器备份
+.idea/
+*.md~
+*~
