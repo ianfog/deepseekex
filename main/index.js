@@ -1,0 +1,576 @@
+'use strict'
+/**
+ * Electron main entry. Owns the window, the boot orchestration (npm CLI ->
+ * kernel -> backend), the update flow, backend crash handling with one-shot
+ * kernel rollback, and the IPC surface exposed to the chrome renderer.
+ * @module deepseekex/main
+ */
+
+const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const crypto = require('node:crypto')
+const semver = require('semver')
+const jsyaml = require('js-yaml')
+const paths = require('./paths.js')
+const log = require('./log.js')
+const npm = require('./npm.js')
+const kernel = require('./kernel.js')
+const updater = require('./updater.js')
+const { Backend } = require('./backend.js')
+const uiPatch = require('./ui-patch.js')
+
+/**
+ * Resolve the Node runtime for backend/kernel processes. Prefers a real Node
+ * on PATH: native addons (koffi directory picker, node-addon-require-builtin)
+ * load only under plain-Node ABIs — under Electron-as-Node they crash or fail
+ * to load. Falls back to Electron-as-Node so the packaged app still works
+ * without a system Node.
+ * @returns {Promise<{ nodeBin: string, electronAsNode: boolean }>}
+ */
+async function resolveNodeBin() {
+  const candidates = []
+  if (process.env.DSH_DESKTOP_NODE) candidates.push(process.env.DSH_DESKTOP_NODE)
+  else candidates.push('node')
+  const { execFile } = require('node:child_process')
+  for (const candidate of candidates) {
+    try {
+      const version = await new Promise((resolve, reject) => {
+        execFile(candidate, ['--version'], { timeout: 5000 }, (err, stdout) => {
+          if (err) return reject(err)
+          resolve(String(stdout).trim())
+        })
+      })
+      const v = semver.valid(version)
+      if (v && (semver.gte(v, '22.19.0') || semver.major(v) >= 24)) {
+        log.info(`backend runtime: ${candidate} (node ${v})`)
+        return { nodeBin: candidate, electronAsNode: false }
+      }
+    } catch {
+      /* candidate unavailable; try the next */
+    }
+  }
+  log.info('backend runtime: Electron-as-Node (no usable system Node found)')
+  return { nodeBin: process.execPath, electronAsNode: true }
+}
+
+let userData = ''
+let settings = {}
+let win = null
+let backend = null
+let npmCli = null
+let exitCount = 0
+let rollbackAttempted = false
+let nodeBin = process.execPath
+let electronAsNode = true
+const state = {
+  phase: 'starting', // starting | ready | updating | error | quitting
+  kernelVersion: null,
+  latestVersion: null,
+  updateAvailable: false,
+  backendUrl: null,
+  source: null,
+  message: '',
+  logsTail: [],
+  settings: {},
+  themePreference: 'system', // 'light' | 'dark' | 'system' (dsh UI's own setting)
+  balance: null, // DeepSeek platform balance telemetry ({ok,...} | null)
+}
+
+function broadcast() {
+  state.logsTail = log.tail()
+  state.settings = { ...settings }
+  if (win && !win.isDestroyed()) win.webContents.send('desktop:event', { type: 'state', state })
+}
+
+/** Push a check/update progress event to the chrome (0-100, uppercase label). */
+function sendProgress(pct, label) {
+  if (!win || win.isDestroyed()) return
+  win.webContents.send('desktop:progress', { pct, label })
+}
+
+/** Refresh platform balance telemetry into state and broadcast (best-effort). */
+async function refreshBalance() {
+  const balance = require('./balance.js')
+  const home = dshHomeDir()
+  state.balance = await balance.fetchBalance(home)
+  broadcast()
+}
+
+/** Main boot pipeline; retryable from the UI. */
+async function boot() {
+  state.phase = 'starting'
+  state.message = 'starting…'
+  broadcast()
+  try {
+    settings = paths.readSettings(userData)
+    log.info(`deepseekex boot (node ${process.versions.node}, ${process.platform}/${process.arch})`)
+    log.info(`settings: ${JSON.stringify(settings)}`)
+    const runtime = await resolveNodeBin()
+    nodeBin = runtime.nodeBin
+    electronAsNode = runtime.electronAsNode
+
+    state.message = 'preparing npm CLI…'
+    broadcast()
+    const cli = await npm.ensureNpmCli(userData, settings, (m) => {
+      state.message = m
+      broadcast()
+    })
+    npmCli = cli.cli
+
+    let latest = null
+    try {
+      latest = await updater.latestVersion(settings)
+    } catch (err) {
+      log.warn(`registry unreachable at boot (${err.message}); continuing with local kernel if present`)
+    }
+    const active = await kernel.ensureActive(userData, {
+      latest,
+      nodeBin,
+      npmCli: cli.cli,
+      electronAsNode,
+      settings,
+      onProgress: (m) => {
+        state.message = m
+        broadcast()
+      },
+    })
+    state.kernelVersion = active
+    state.latestVersion = latest
+
+    await startBackend()
+    state.phase = 'ready'
+    state.message = 'ready'
+    refreshThemePreference()
+    broadcast()
+
+    // Platform balance telemetry: silent, non-blocking, refreshed on demand.
+    void refreshBalance().catch(() => {})
+    setInterval(() => {
+      if (state.phase === 'ready') void refreshBalance().catch(() => {})
+    }, 5 * 60_000).unref?.()
+
+    if (settings.autoCheck) {
+      try {
+        const check = await updater.check({ settings, current: active })
+        state.latestVersion = check.latest
+        state.updateAvailable = check.updateAvailable
+        state.source = check.source
+        log.info(`update check: current=${check.current} latest=${check.latest} available=${check.updateAvailable}`)
+        broadcast()
+      } catch (err) {
+        log.warn(`update check failed: ${err.message}`)
+      }
+    }
+  } catch (err) {
+    state.phase = 'error'
+    state.message = err instanceof Error ? err.message : String(err)
+    log.error(`boot failed: ${state.message}`)
+    broadcast()
+  }
+}
+
+/** Stop the old backend (if any) and start the active kernel. */
+async function startBackend() {
+  if (backend) await backend.stop().catch(() => {})
+  const dir = kernel.dirFor(userData, state.kernelVersion)
+  backend = new Backend({ nodeBin, electronAsNode, onExit: handleBackendExit })
+  const url = await backend.start(dir, {
+    dshHome: settings.dshHome || undefined,
+    bootTimeoutMs: 120_000,
+    probeTimeoutMs: 20_000,
+  })
+  exitCount = 0
+  state.backendUrl = url
+  broadcast()
+}
+
+/** Backend died: restart, then one-shot rollback to the previous kernel. */
+async function handleBackendExit(code, signal) {
+  if (state.phase === 'quitting' || state.phase === 'updating') return
+  log.warn(`backend exited unexpectedly (code ${code}, ${signal}); exit#${exitCount + 1}`)
+  exitCount += 1
+  state.phase = 'error'
+  state.message = '内核进程退出，正在恢复…'
+  broadcast()
+  await new Promise((r) => setTimeout(r, 500))
+  try {
+    if (exitCount <= 3 && !rollbackAttempted) {
+      await startBackend()
+      state.phase = 'ready'
+      state.message = '内核已恢复'
+    } else if (!rollbackAttempted) {
+      rollbackAttempted = true
+      const previous = kernel
+        .listInstalled(userData)
+        .filter((v) => v !== state.kernelVersion)
+        .sort(semver.rcompare)[0]
+      if (previous) {
+        log.warn(`crash loop detected; rolling back kernel to ${previous}`)
+        kernel.setActive(userData, previous)
+        state.kernelVersion = previous
+        state.message = `内核异常，已回滚到 ${previous}`
+        await startBackend()
+        state.phase = 'ready'
+      } else {
+        state.message = '内核进程反复崩溃，且没有可回滚的旧版本'
+      }
+    } else {
+      state.message = '内核进程反复崩溃，已停止自动恢复'
+    }
+  } catch (err) {
+    state.phase = 'error'
+    state.message = `恢复失败: ${err.message}`
+    log.error(`recovery failed: ${err.message}`)
+  }
+  broadcast()
+}
+
+function createWindow() {
+  // Fit the primary display's work area so the window never opens clipped or
+  // squeezed on small/scaled screens; then maximize to fill the screen.
+  const work = screen.getPrimaryDisplay().workAreaSize
+  const width = Math.min(1320, Math.max(940, work.width - 48))
+  const height = Math.min(860, Math.max(620, work.height - 48))
+  win = new BrowserWindow({
+    width,
+    height,
+    minWidth: 940,
+    minHeight: 620,
+    title: 'Deepseekex',
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#191919',
+    // Frameless-but-native-chrome on Windows: hide the system title bar and
+    // let the shell paint the topbar; keep the OS window buttons (min/max/
+    // close) as a titleBarOverlay tinted with the Endfield ink. macOS keeps
+    // its native frame (traffic lights) to avoid overlapping the brand.
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden',
+          titleBarOverlay: {
+            color: '#191919',
+            symbolColor: '#f2f2f0',
+            height: 52,
+          },
+        }
+      : {}),
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  // Open as a normal (non-maximized) window: size fits the work area without
+  // covering the whole screen. Show once the page is paintable.
+  win.once('ready-to-show', () => {
+    win.show()
+  })
+  // The dsh UI lives in an in-page `<iframe>` (a plain DOM element: size
+  // always follows the CSS box and the chrome DOM stacks above it, unlike a
+  // native WebContentsView or a webview guest). External links from the dsh
+  // UI open in the system browser.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) require('electron').shell.openExternal(url).catch(() => {})
+    return { action: 'deny' }
+  })
+  // Apply the UI patch layer (Endfield styling) whenever the dsh iframe
+  // finishes loading. Re-applied a couple of times because the ui-theme
+  // plugin injects its stylesheets lazily after load.
+  win.webContents.on('did-frame-finish-load', (_e, isMainFrame, frameProcessId, frameRoutingId) => {
+    if (isMainFrame) return
+    let frame = null
+    try {
+      frame = require('electron').webFrameMain.fromId(frameProcessId, frameRoutingId)
+    } catch {
+      return
+    }
+    if (!frame || !/^https?:\/\/127\.0\.0\.1:\d+/.test(frame.url)) return
+    if (state.phase !== 'ready') return
+    // The Endfield industrial look is dark by design: force the carbon shell
+    // unless the user explicitly picked a light 配色.
+    const forceDark = readThemePreference() !== 'light'
+    for (const delay of [0, 1000, 4000]) {
+      setTimeout(() => {
+        if (win && !win.isDestroyed()) void uiPatch.applyUiPatches(win, { forceDark })
+      }, delay)
+    }
+  })
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
+  win.on('closed', () => {
+    win = null
+  })
+  if (process.env.DSH_DESKTOP_DEVTOOLS) win.webContents.openDevTools({ mode: 'detach' })
+}
+
+/** The dsh home directory the backend actually uses (settings override or default). */
+function dshHomeDir() {
+  return settings.dshHome || process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
+}
+
+/** Read the persisted ui-theme preference from the hot-reloaded settings document. */
+function readThemePreference() {
+  try {
+    const file = path.join(dshHomeDir(), 'settings.yaml')
+    if (!fs.existsSync(file)) return 'system'
+    const doc = jsyaml.load(fs.readFileSync(file, 'utf8'))
+    const pref = doc && typeof doc === 'object' ? doc['ui-theme']?.preference : undefined
+    return pref === 'light' || pref === 'dark' ? pref : 'system'
+  } catch (err) {
+    log.warn(`theme preference read failed: ${err.message}`)
+    return 'system'
+  }
+}
+
+/** Sync the 配色 preference into state (the dsh UI owns light/dark). */
+function refreshThemePreference() {
+  const pref = readThemePreference()
+  if (state.themePreference !== pref) {
+    state.themePreference = pref
+    broadcast()
+  }
+}
+
+/**
+ * Switch the host workspace by writing the workspace storage document and
+ * restarting the backend. The in-app directory picker (koffi native dialog /
+ * browse flow) is unreliable inside this app's runtime, so the shell owns the
+ * pick via Electron's native folder dialog and persists the result directly.
+ * @param {string} dir - absolute directory path to become the workspace.
+ * @returns {Promise<void>}
+ */
+async function switchWorkspace(dir) {
+  const canonical = fs.realpathSync(dir)
+  const title = path.basename(canonical)
+  const id = crypto.randomUUID()
+  const storageDir = path.join(dshHomeDir(), 'storages')
+  const file = path.join(storageDir, 'workspace.json')
+  fs.mkdirSync(storageDir, { recursive: true })
+  const doc = fs.existsSync(file)
+    ? JSON.parse(fs.readFileSync(file, 'utf8'))
+    : { unit: { name: 'workspace', version: 2 }, global: { initialized: true, workspaceIds: [], archivedSessionIds: [] }, tables: { workspaces: {} } }
+  doc.global = { ...(doc.global || {}), initialized: true, workspaceIds: [id, ...(doc.global?.workspaceIds || [])] }
+  doc.tables = doc.tables || {}
+  doc.tables.workspaces = doc.tables.workspaces || {}
+  doc.tables.workspaces[id] = {
+    path: canonical,
+    title,
+    sessionIds: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  fs.writeFileSync(file, JSON.stringify(doc, null, 2))
+  log.info(`workspace switched to ${canonical} (${file})`)
+  // Restart the backend so the storage domain re-reads the document.
+  await startBackend()
+}
+
+// ---- IPC ----
+
+ipcMain.handle('desktop:get-state', () => state)
+ipcMain.handle('desktop:get-settings', () => ({ ...settings }))
+
+// Manual balance refresh (click the SYS/BALANCE cell).
+ipcMain.handle('desktop:refresh-balance', async () => {
+  await refreshBalance()
+  return state.balance
+})
+
+// Workspace switch: native folder dialog in the shell, then persist + restart.
+ipcMain.handle('desktop:pick-workspace', async () => {
+  if (!win) return { ok: false, message: 'no window' }
+  state.message = '正在重启内核…'
+  broadcast()
+  const result = await dialog.showOpenDialog(win, {
+    title: '选择工作区目录',
+    properties: ['openDirectory', 'createDirectory'],
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    state.message = state.phase === 'ready' ? 'ready' : state.message
+    broadcast()
+    return { ok: false, canceled: true }
+  }
+  try {
+    await switchWorkspace(result.filePaths[0])
+    state.phase = 'ready'
+    state.message = `工作区已切换`
+    broadcast()
+    return { ok: true, path: result.filePaths[0] }
+  } catch (err) {
+    state.phase = 'error'
+    state.message = `切换工作区失败: ${err.message}`
+    log.error(`workspace switch failed: ${err.message}`)
+    broadcast()
+    return { ok: false, message: err.message }
+  }
+})
+
+ipcMain.handle('desktop:save-settings', async (_e, patch) => {
+  settings = {
+    dshHome: typeof patch.dshHome === 'string' ? patch.dshHome.trim() : settings.dshHome,
+    npmRegistry: typeof patch.npmRegistry === 'string' ? patch.npmRegistry.trim() : settings.npmRegistry,
+    autoCheck: typeof patch.autoCheck === 'boolean' ? patch.autoCheck : settings.autoCheck,
+  }
+  fs.mkdirSync(userData, { recursive: true })
+  fs.writeFileSync(paths.settingsFile(userData), JSON.stringify(settings, null, 2))
+  log.info(`settings saved: ${JSON.stringify(settings)}`)
+  if (state.phase === 'ready') {
+    state.message = '设置已保存，正在重启内核…'
+    broadcast()
+    try {
+      await startBackend()
+      state.phase = 'ready'
+      state.message = '设置已生效'
+      broadcast()
+    } catch (err) {
+      state.phase = 'error'
+      state.message = `应用设置失败: ${err.message}`
+      broadcast()
+    }
+  }
+  return { ...settings }
+})
+
+ipcMain.handle('desktop:check-update', async () => {
+  if (!state.kernelVersion) return { ok: false, message: '内核尚未就绪' }
+  state.message = '正在检查更新…'
+  broadcast()
+  try {
+    const check = await updater.check({
+      settings,
+      current: state.kernelVersion,
+      onProgress: (pct, label) => sendProgress(pct, label),
+    })
+    state.latestVersion = check.latest
+    state.updateAvailable = check.updateAvailable
+    state.source = check.source
+    state.message = check.updateAvailable
+      ? `发现新内核 ${check.latest}`
+      : `已是最新内核 (${check.current})`
+    broadcast()
+    return { ok: true, ...check }
+  } catch (err) {
+    state.message = `检查更新失败: ${err.message}`
+    broadcast()
+    return { ok: false, message: err.message }
+  }
+})
+
+ipcMain.handle('desktop:apply-update', async () => {
+  if (state.phase === 'updating') return { ok: false, message: '正在更新中' }
+  if (!state.latestVersion || !state.updateAvailable) {
+    return { ok: false, message: '没有可用的更新' }
+  }
+  state.phase = 'updating'
+  state.message = '更新内核中…'
+  broadcast()
+  // Map updater stage strings to percentages on the telemetry bar.
+  const stagePct = {
+    'downloading & installing new kernel': 15,
+    'verifying new kernel boots': 85,
+  }
+  let installTick = 0
+  try {
+    const res = await updater.apply({
+      userData,
+      settings,
+      current: state.kernelVersion,
+      nodeBin,
+      npmCli,
+      electronAsNode,
+      onProgress: (m) => {
+        state.message = m
+        broadcast()
+        const pct = stagePct[m]
+        if (pct != null) {
+          sendProgress(pct, m.slice(0, 32).toUpperCase())
+        } else if (/installing kernel|npm install/.test(m)) {
+          // npm output lines: creep from 20% toward the verify stage.
+          installTick += 1
+          sendProgress(Math.min(80, 20 + installTick), 'INSTALLING KERNEL')
+        }
+      },
+    })
+    if (res.updated) {
+      state.kernelVersion = res.version
+      state.latestVersion = res.version
+      state.updateAvailable = false
+      await startBackend()
+      state.phase = 'ready'
+      state.message = `内核已更新到 ${res.version}`
+      sendProgress(100, 'UPDATE DONE')
+    } else {
+      state.phase = 'ready'
+      state.message = `当前已是最新内核 (${res.version})`
+      sendProgress(100, 'CHECK DONE')
+    }
+  } catch (err) {
+    state.phase = 'ready'
+    state.message = `更新失败: ${err.message}`
+    log.error(`update failed: ${err.message}`)
+    sendProgress(100, 'UPDATE FAILED')
+  }
+  broadcast()
+  return { ok: true, phase: state.phase, message: state.message }
+})
+
+ipcMain.handle('desktop:restart-backend', async () => {
+  if (state.phase !== 'ready' && state.phase !== 'error') return { ok: false, message: state.phase }
+  state.message = '正在重启内核…'
+  broadcast()
+  try {
+    await startBackend()
+    state.phase = 'ready'
+    state.message = '内核已重启'
+    broadcast()
+    return { ok: true }
+  } catch (err) {
+    state.phase = 'error'
+    state.message = `重启失败: ${err.message}`
+    broadcast()
+    return { ok: false, message: err.message }
+  }
+})
+
+ipcMain.handle('desktop:retry-boot', async () => {
+  await boot()
+  return { ok: state.phase !== 'error' }
+})
+
+// ---- lifecycle ----
+
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
+  })
+
+  app.whenReady().then(() => {
+    userData = paths.userDataDir()
+    fs.mkdirSync(userData, { recursive: true })
+    log.init(userData)
+    createWindow()
+    boot()
+  })
+
+  let quitting = false
+  app.on('before-quit', (e) => {
+    if (backend && backend.isRunning() && !quitting) {
+      e.preventDefault()
+      quitting = true
+      state.phase = 'quitting'
+      backend.stop().finally(() => app.quit())
+    }
+  })
+
+  app.on('window-all-closed', () => {
+    app.quit()
+  })
+}

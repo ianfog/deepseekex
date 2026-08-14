@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/*
+!build/icon.ico
+*.log
+.DS_Store
+
+# 凭据/密钥 — 绝不入库
+.credentials.yaml
+.env
+.env.*
+*.local
+.npmrc

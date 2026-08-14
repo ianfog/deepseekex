@@ -1,0 +1,663 @@
+/* ============================================================
+   Deepseekex chrome — Endfield field-engineering terminal
+   Family: endfield · Depth: complex (system-wide reconstruction)
+
+   Evidence contract (ark-ui-skill endfield recipe):
+   - Palette: ink #191919, paper #f2f2f0, signal #fffa00,
+     verified/online green #00ffa2, muted #888888.
+   - Type: wide condensed display + technical sans; CJK UI stack.
+   - Shell: top bar = utility dock; rectangular tiles; long guide
+     lines; clipped wedges; very large section numerals.
+   - Geometry: default radius 0, functional 2px, 1px rules,
+     corner registration brackets, calibration ruler.
+   - Motion: yellow wipe on load, directional clipped reveals,
+     restrained breathing state block; reduced-motion parity.
+   - One dominant accent (signal yellow); green is reserved for
+     verified/online state only. No hazard stripes, no neon.
+   ============================================================ */
+
+:root {
+  /* ---- Endfield token set ---- */
+  --ef-ink: #191919;          /* deepest surface */
+  --ef-ink-raised: #232323;   /* raised panel */
+  --ef-ink-hover: #2e2e2e;    /* hover fill */
+  --ef-ink-active: #3a3a3a;   /* pressed fill */
+  --ef-paper: #f2f2f0;        /* primary text / light surface */
+  --ef-paper-dim: #c9c9c4;    /* secondary text */
+  --ef-muted: #888888;        /* tertiary text */
+  --ef-signal: #fffa00;       /* THE accent: selection/active/primary */
+  --ef-verified: #00ffa2;     /* online/verified state only */
+  --ef-danger: #d64545;       /* fault state */
+  --ef-grid: rgba(255, 255, 255, 0.05);
+  --ef-grid-inverse: rgba(255, 255, 255, 0.14);
+  --ef-hairline: rgba(255, 255, 255, 0.08);
+  --ef-radius: 2px;
+  --ef-fast: 240ms cubic-bezier(0.22, 0.8, 0.2, 1);
+  --ef-reveal: 650ms cubic-bezier(0.22, 0.8, 0.2, 1);
+  --ef-font-ui: "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --ef-font-display: "Arial Narrow", "Roboto Condensed", "DIN Condensed", "Segoe UI", sans-serif;
+  --ef-font-tech: "Space Grotesk", "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --ef-font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--ef-ink);
+  color: var(--ef-paper);
+  font-family: var(--ef-font-ui);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+body { display: flex; flex-direction: column; }
+
+::selection { background: var(--ef-signal); color: var(--ef-ink); }
+
+/* ---- top bar: Endfield utility dock ---- */
+#topbar {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 18px;
+  height: 52px;
+  padding: 0 16px;
+  background:
+    linear-gradient(var(--ef-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ef-grid) 1px, transparent 1px),
+    var(--ef-ink);
+  background-size: 44px 44px, 44px 44px, auto;
+  border-bottom: 1px solid var(--ef-hairline);
+  flex: none;
+  overflow: hidden;
+  /* frameless window: the shell paints the titlebar; drag anywhere to move */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+/* interactive elements inside the drag region stay clickable */
+#topbar .btn,
+#topbar .progress,
+#topbar .dot,
+#topbar .emblem,
+#topbar .cell.clickable {
+  -webkit-app-region: no-drag;
+}
+/* signal rail under the topbar: yellow wipe in on load, fades right */
+#topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--ef-signal) 0 160px, transparent 160px);
+  transform-origin: left;
+  animation: ef-wipe 900ms var(--ef-reveal) both;
+}
+@keyframes ef-wipe { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+/* corner registration marks */
+#topbar::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 10px;
+  height: 10px;
+  border-left: 1px solid var(--ef-muted);
+  border-top: 1px solid var(--ef-muted);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: none;
+}
+/* emblem: Endfield diamond — rotated square outline with signal core */
+.brand .emblem {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--ef-paper);
+  transform: rotate(45deg);
+  position: relative;
+  flex: none;
+}
+.brand .emblem::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  background: var(--ef-signal);
+  transform: translate(-50%, -50%);
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.brand .title {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+.brand .kicker {
+  font: 600 8.5px/1 var(--ef-font-tech);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ef-muted);
+  white-space: nowrap;
+}
+
+/* telemetry readout cells: calibration strip */
+.readout {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+}
+.readout .cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 128px;
+  padding: 5px 16px;
+  border-left: 1px solid var(--ef-hairline);
+  position: relative;
+}
+.readout .cell:first-child {
+  box-shadow: inset 3px 0 0 var(--ef-signal);
+}
+.readout .cell-label {
+  font: 600 8px/1 var(--ef-font-tech);
+  letter-spacing: 0.2em;
+  color: var(--ef-muted);
+}
+.readout .cell-value {
+  font: 600 12px/1 var(--ef-font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--ef-paper);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.readout .cell-value.signal { color: var(--ef-signal); }
+.readout .cell.clickable { cursor: pointer; }
+.readout .cell.clickable:hover { background: var(--ef-ink-raised); }
+.readout .cell-value.low { color: var(--ef-danger); }
+.readout .cell-value.fault { color: var(--ef-danger); }
+
+/* ---- calibration ruler: long guide line with ticks ---- */
+.ruler {
+  height: 18px;
+  flex: none;
+  position: relative;
+  background: var(--ef-ink);
+  border-bottom: 1px solid var(--ef-hairline);
+  overflow: hidden;
+}
+.ruler::before {
+  /* base line */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  height: 1px;
+  background: var(--ef-grid-inverse);
+  opacity: 0.5;
+}
+.ruler::after {
+  /* tick strip: repeating scale */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 5px;
+  height: 8px;
+  background-image:
+    repeating-linear-gradient(90deg,
+      var(--ef-hairline) 0 1px, transparent 1px 20px);
+  opacity: 0.8;
+}
+.ruler b {
+  /* major ticks every 20%, slightly taller */
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 12px;
+  background: var(--ef-muted);
+  opacity: 0.6;
+}
+.ruler span {
+  position: absolute;
+  bottom: 11px;
+  font: 500 7px/1 var(--ef-font-tech);
+  letter-spacing: 0.14em;
+  color: var(--ef-muted);
+  opacity: 0.6;
+  transform: translateX(-1px);
+}
+
+/* ---- buttons: square, strong label, left signal wedge, 1px rule ---- */
+.btn {
+  position: relative;
+  min-height: 30px;
+  padding: 0 16px;
+  border: 1px solid var(--ef-ink-hover);
+  border-radius: var(--ef-radius);
+  color: var(--ef-paper);
+  background: transparent;
+  font: 700 12px/1 var(--ef-font-ui);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition:
+    background var(--ef-fast),
+    color var(--ef-fast),
+    transform var(--ef-fast),
+    box-shadow var(--ef-fast);
+}
+.btn:hover { background: var(--ef-ink-hover); }
+.btn:active { background: var(--ef-ink-active); transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--ef-signal); outline-offset: 2px; }
+.btn:disabled { opacity: 0.4; cursor: default; transform: none; }
+
+/* ghost: outline control; hover reveals a left signal wedge */
+.btn.ghost {
+  background: transparent;
+  color: var(--ef-paper);
+  border-color: var(--ef-hairline);
+  clip-path: none;
+  padding: 0 14px;
+}
+.btn.ghost:hover {
+  background: var(--ef-ink-hover);
+  box-shadow: inset 3px 0 0 var(--ef-signal);
+}
+.btn.ghost .idx {
+  font: 700 10px/1 var(--ef-font-display);
+  color: var(--ef-signal);
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* primary CTA: signal fill, ink label, clipped wedge corner */
+.btn.primary,
+.btn.warn {
+  background: var(--ef-signal);
+  color: var(--ef-ink);
+  border-color: var(--ef-signal);
+  font-weight: 800;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+}
+.btn.primary:hover,
+.btn.warn:hover { background: #e6e100; border-color: #e6e100; transform: translateY(-1px); }
+.btn.primary:active,
+.btn.warn:active { background: #ccc800; transform: translateY(0); }
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: none;
+  /* leave room for the native window buttons (titleBarOverlay, top-right) */
+  margin-right: 140px;
+}
+
+/* ---- update check / kernel update progress: calibration strip ---- */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 168px;
+  padding: 0 4px;
+}
+.progress[hidden] { display: none; }
+.progress-track {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  background:
+    repeating-linear-gradient(90deg,
+      var(--ef-grid-inverse) 0 1px, transparent 1px 12px),
+    var(--ef-ink-raised);
+  border: 1px solid var(--ef-hairline);
+  overflow: hidden;
+}
+.progress-track i {
+  /* signal fill with a clipped wedge tip, like the shell rail */
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--ef-signal);
+  clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 50%, calc(100% - 5px) 100%, 0 100%);
+  transition: width 240ms cubic-bezier(0.22, 0.8, 0.2, 1);
+}
+.progress-label {
+  flex: none;
+  font: 600 8px/1 var(--ef-font-tech);
+  letter-spacing: 0.14em;
+  color: var(--ef-paper-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 58px;
+  text-align: right;
+}
+.progress.done .progress-track i { background: var(--ef-verified); }
+.progress.fault .progress-track i { background: var(--ef-danger); }
+
+/* status lamp: square block. yellow breathing = busy,
+   green = verified/online, red = fault */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  background: var(--ef-ink-hover);
+  flex: none;
+  box-shadow: 0 0 0 1px var(--ef-ink-raised) inset;
+}
+.dot.ok {
+  background: var(--ef-verified);
+  box-shadow: 0 0 6px var(--ef-verified);
+}
+.dot.err {
+  background: var(--ef-danger);
+  box-shadow: 0 0 6px var(--ef-danger);
+}
+.dot.busy {
+  background: var(--ef-signal);
+  animation: ef-breathe 1800ms cubic-bezier(0.22, 0.8, 0.2, 1) infinite;
+}
+@keyframes ef-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+/* ---- stage ---- */
+#stage { flex: 1; position: relative; min-height: 0; }
+/* corner registration brackets: Endfield frame language */
+.corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0.5;
+}
+.corner.tl { left: 6px; top: 6px; border-left: 1px solid var(--ef-muted); border-top: 1px solid var(--ef-muted); }
+.corner.tr { right: 6px; top: 6px; border-right: 1px solid var(--ef-muted); border-top: 1px solid var(--ef-muted); }
+.corner.bl { left: 6px; bottom: 6px; border-left: 1px solid var(--ef-muted); border-bottom: 1px solid var(--ef-muted); }
+.corner.br { right: 6px; bottom: 6px; border-right: 1px solid var(--ef-muted); border-bottom: 1px solid var(--ef-muted); }
+
+/* The dsh UI iframe fills the stage; invisible until the backend is ready. */
+iframe#surface {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  visibility: hidden;
+}
+iframe#surface.visible { visibility: visible; }
+
+/* ---- boot/update/error overlay: technical panel ---- */
+#overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(var(--ef-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ef-grid) 1px, transparent 1px),
+    var(--ef-ink);
+  background-size: 44px 44px, 44px 44px, auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+#overlay[hidden] { display: none; }
+.overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 600px;
+  padding: 22px 26px 18px;
+  border: 1px solid var(--ef-hairline);
+  border-radius: var(--ef-radius);
+  background: var(--ef-ink-raised);
+  position: relative;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  animation: ef-reveal-up var(--ef-reveal) both;
+}
+@keyframes ef-reveal-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.overlay-card::before {
+  /* top-left corner bracket */
+  content: "";
+  position: absolute;
+  inset: -1px auto auto -1px;
+  width: 34px;
+  height: 3px;
+  background: var(--ef-signal);
+}
+.overlay-kicker {
+  font: 700 9px/1 var(--ef-font-tech);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--ef-signal);
+  margin-bottom: 2px;
+}
+.overlay-title {
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+.overlay-message {
+  color: var(--ef-paper-dim);
+  font: 500 11px/1.6 var(--ef-font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.overlay-actions { margin-top: 6px; }
+
+/* diamond spinner: rotated square, signal edge */
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--ef-ink-hover);
+  border-top-color: var(--ef-signal);
+  transform: rotate(45deg);
+  border-radius: 0;
+  animation: ef-spin 0.9s linear infinite;
+}
+@keyframes ef-spin { to { transform: rotate(405deg); } }
+
+/* calibration scale ticks under the overlay card */
+.overlay-scale {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  height: 14px;
+  margin-top: 2px;
+}
+.overlay-scale i {
+  width: 2px;
+  background: var(--ef-muted);
+  opacity: 0.5;
+}
+.overlay-scale i:nth-child(1) { height: 4px; }
+.overlay-scale i:nth-child(2) { height: 8px; }
+.overlay-scale i:nth-child(3) { height: 12px; }
+.overlay-scale i:nth-child(4) { height: 6px; }
+.overlay-scale i:nth-child(5) { height: 10px; }
+.overlay-scale i:nth-child(6) { height: 4px; }
+.overlay-scale i:nth-child(7) { height: 12px; }
+.overlay-scale i:nth-child(8) { height: 6px; }
+.overlay-scale i:nth-child(9) { height: 8px; }
+.overlay-scale i:nth-child(10) { height: 4px; }
+.overlay-scale i:nth-child(2n) { background: var(--ef-signal); opacity: 0.8; }
+
+/* ---- log panel: technical side drawer ---- */
+#logPanel {
+  position: fixed;
+  right: 0;
+  top: 71px; /* 52 topbar + 18 ruler + 1 border */
+  bottom: 0;
+  width: 560px;
+  background: var(--ef-ink);
+  border-left: 1px solid var(--ef-hairline);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.3);
+}
+#logPanel[hidden] { display: none; }
+.log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--ef-hairline);
+  font: 700 10px/1 var(--ef-font-tech);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ef-paper-dim);
+  background: var(--ef-ink-raised);
+}
+.log-head .btn.ghost { min-height: 24px; padding: 0 10px; }
+#logBody {
+  flex: 1;
+  margin: 0;
+  padding: 10px 14px;
+  overflow-y: auto;
+  font-family: var(--ef-font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ef-paper-dim);
+  white-space: pre-wrap;
+}
+#logBody .ts { color: var(--ef-muted); }
+
+/* ---- settings dialog: industrial panel ---- */
+dialog {
+  background: var(--ef-ink-raised);
+  color: var(--ef-paper);
+  border: 1px solid var(--ef-hairline);
+  border-radius: var(--ef-radius);
+  width: 500px;
+  padding: 22px 26px 20px;
+  position: relative;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
+}
+dialog::before {
+  content: "";
+  position: absolute;
+  inset: -1px auto auto -1px;
+  width: 34px;
+  height: 3px;
+  background: var(--ef-signal);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
+.dialog-code {
+  margin: 0 0 4px;
+  font: 600 8px/1 var(--ef-font-tech);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ef-muted);
+}
+dialog h2 {
+  margin: 0 0 2px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+dialog .dialog-kicker {
+  margin: 0 0 18px;
+  font: 700 9px/1 var(--ef-font-tech);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ef-muted);
+}
+dialog label {
+  display: block;
+  margin-bottom: 14px;
+  font: 700 10px/1 var(--ef-font-tech);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ef-paper-dim);
+}
+dialog input[type="text"],
+dialog select {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  background: var(--ef-ink);
+  color: var(--ef-paper);
+  border: 1px solid var(--ef-hairline);
+  border-radius: var(--ef-radius);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: var(--ef-font-ui);
+}
+dialog input[type="text"]:focus,
+dialog select:focus {
+  outline: none;
+  border-color: var(--ef-signal);
+  box-shadow: inset 0 0 0 1px var(--ef-signal);
+}
+dialog select { cursor: pointer; }
+dialog label.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  font: 500 12px/1 var(--ef-font-ui);
+  color: var(--ef-paper);
+}
+dialog input[type="checkbox"] {
+  accent-color: var(--ef-signal);
+  width: 15px;
+  height: 15px;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ef-hairline);
+}
+
+/* ---- scrollbars: square, hairline ---- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ef-ink-active); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--ef-signal); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, .dot, .spinner, #topbar::after, .overlay-card,
+  .overlay-scale i { animation: none; transition: none; }
+}

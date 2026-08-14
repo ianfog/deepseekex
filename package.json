@@ -1,0 +1,68 @@
+{
+  "name": "deepseekex",
+  "productName": "Deepseekex",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness desktop client — Electron shell with an updatable dsh kernel pulled from the upstream GitHub source via npm.",
+  "main": "main/index.js",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "node main/smoke.js",
+    "icon": "node scripts/make-icon.js",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist": "electron-builder"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "dependencies": {
+    "js-yaml": "^4.2.0",
+    "semver": "^7.8.5"
+  },
+  "build": {
+    "appId": "com.deepseekex.app",
+    "productName": "Deepseekex",
+    "asar": true,
+    "files": [
+      "main/**/*",
+      "!main/probe-*.js",
+      "!main/verify-*.js",
+      "!main/smoke.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Deepseekex-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "artifactName": "Deepseekex-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "sign": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.0.12"
+  }
+}

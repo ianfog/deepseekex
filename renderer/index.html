@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN" data-ark-theme="endfield" data-ark-depth="complex">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>Deepseekex</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">
+      <span class="dot" id="statusDot" title="状态"></span>
+      <span class="emblem" title="Deepseekex" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="title">Deepseekex</span>
+        <span class="kicker">FIELD TERMINAL&nbsp;//&nbsp;DSH-NODE</span>
+      </span>
+    </div>
+    <div class="readout" role="status" aria-label="系统状态">
+      <span class="cell">
+        <span class="cell-label">SYS/KERNEL</span>
+        <span class="cell-value" id="kernelChip">-</span>
+      </span>
+      <span class="cell">
+        <span class="cell-label">SYS/UPSTREAM</span>
+        <span class="cell-value signal" id="sourceChip">-</span>
+      </span>
+      <span class="cell">
+        <span class="cell-label">SYS/STATUS</span>
+        <span class="cell-value" id="phaseChip">BOOT</span>
+      </span>
+      <span class="cell clickable" id="balanceCell" title="DeepSeek 平台余额（点击刷新）">
+        <span class="cell-label">SYS/BALANCE</span>
+        <span class="cell-value" id="balanceChip">--</span>
+      </span>
+    </div>
+    <div class="actions">
+      <div class="progress" id="updateProgress" hidden role="progressbar" aria-label="检查更新进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress-track"><i id="updateProgressFill"></i></div>
+        <span class="progress-label" id="updateProgressLabel">CHECK 0%</span>
+      </div>
+      <button id="updateBtn" class="btn" hidden>检查更新</button>
+      <button id="workspaceBtn" class="btn ghost"><span class="idx">01</span><span>工作区</span></button>
+      <button id="settingsBtn" class="btn ghost"><span class="idx">02</span><span>设置</span></button>
+      <button id="logsBtn" class="btn ghost"><span class="idx">03</span><span>日志</span></button>
+    </div>
+  </header>
+  <div class="ruler" aria-hidden="true">
+    <span style="left:0">0000</span><b style="left:20%"></b>
+    <span style="left:20%">0250</span><b style="left:40%"></b>
+    <span style="left:40%">0500</span><b style="left:60%"></b>
+    <span style="left:60%">0750</span><b style="left:80%"></b>
+    <span style="left:80%">1000</span><b style="left:calc(100% - 1px)"></b>
+  </div>
+
+  <main id="stage">
+    <!-- corner registration marks: Endfield frame language -->
+    <span class="corner tl" aria-hidden="true"></span>
+    <span class="corner tr" aria-hidden="true"></span>
+    <span class="corner bl" aria-hidden="true"></span>
+    <span class="corner br" aria-hidden="true"></span>
+    <!-- The dsh UI as an in-page iframe: a plain DOM element, so its size
+         always follows the CSS box (no embedder/guest sync issues) and the
+         chrome DOM (menus/dialogs/overlays) stacks above it naturally. -->
+    <iframe id="surface" allow="clipboard-read; clipboard-write; popups"></iframe>
+    <div id="overlay" hidden>
+      <div class="overlay-card">
+        <div class="overlay-kicker" id="overlayKicker">BOOT SEQUENCE</div>
+        <div class="spinner" id="spinner" aria-hidden="true"></div>
+        <div id="overlayTitle" class="overlay-title">启动中…</div>
+        <div id="overlayMessage" class="overlay-message"></div>
+        <div class="overlay-scale" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="overlay-actions">
+          <button id="retryBtn" class="btn" hidden>重试</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <aside id="logPanel" hidden>
+    <div class="log-head">
+      <span>SYS/LOG&nbsp;//&nbsp;TAIL</span>
+      <button id="logsClose" class="btn ghost" aria-label="关闭日志">×</button>
+    </div>
+    <pre id="logBody"></pre>
+  </aside>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" id="settingsForm">
+      <p class="dialog-code" aria-hidden="true">CONFIG&nbsp;//&nbsp;DSH-TERMINAL</p>
+      <h2>设置</h2>
+      <p class="dialog-kicker">TERMINAL CONFIGURATION</p>
+      <label>
+        DSH_HOME（留空使用默认 ~/.dsh）
+        <input id="setDshHome" type="text" placeholder="例如 C:\Users\you\dsh-home" />
+      </label>
+      <label>
+        npm 镜像（留空使用官方 registry）
+        <input id="setRegistry" type="text" placeholder="https://registry.npmjs.org/" />
+      </label>
+      <label class="row">
+        <input id="setAutoCheck" type="checkbox" />
+        <span>启动时自动检查内核更新</span>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="settingsCancel" class="btn ghost">取消</button>
+        <button type="button" id="settingsSave" class="btn primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./renderer.js"></script>
+</body>
+</html>
