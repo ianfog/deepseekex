@@ -127,14 +127,20 @@ npm run dist:mac   # 在 macOS 上构建 dmg + zip（需在 macOS 上执行）
   `%DSH_DESKTOP_USERDATA%/kernels/` 并写 `active.json` 离线验证。
 - 正式发布 Windows 需代码签名（避免 SmartScreen 提示）；macOS 需 Apple Developer 证书
   签名 + 公证（Gatekeeper），当前 `electron-builder` 配置为未签名构建，供内部试用。
-- 应用图标：`build/icon.ico` 已由 `node scripts/make-icon.js` 生成（Endfield 风格菱形标，
-  16–256 多尺寸，纯 Node 编码无外部依赖），打包时自动使用；macOS 的 `icon.icns` 需另行生成。
-- 三平台发布建议配 GitHub Actions 矩阵，各平台原生构建（macOS 的 dmg 必须在 macOS 上构建）。
+- 应用图标：`build/icon.ico` 与 `build/icon.png`（512px）均由 `node scripts/make-icon.js` 生成
+  （Endfield 风格菱形标，纯 Node 编码无外部依赖）；macOS 的 `icon.icns` 在 CI 里由 PNG 自动转换，
+  本地 mac 构建可照搬 workflow 里的 `sips` + `iconutil` 命令。
+- **自动发布（推荐）**：打 tag（如 `git tag v0.2.1 && git push origin v0.2.1`）触发
+  `.github/workflows/release.yml` —— Windows 与 macOS 双 runner 原生构建，自动把
+  exe / blockmap / latest.yml / dmg / zip / latest-mac.yml 全部挂到该 tag 的 Release 页，
+  electron-updater 自更新清单同步生成。
+- **macOS 注意事项**：dmg 必须在 macOS 上构建（CI 的 macOS runner 满足）；当前为未签名构建，
+  用户首次打开需右键 → 打开（或 `xattr -cr`），正式分发需 Apple Developer 证书签名 + 公证。
 
 ## 目录
 
 ```
 main/          主进程（index/kernel/backend/updater/npm/net/tar-extract/paths/log/smoke）
-preload.js     渲染层桥接
+preload.ts      渲染层桥接
 renderer/      壳页面（顶栏、webview、更新 UI、设置、日志）
 ```

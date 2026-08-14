@@ -2,6 +2,7 @@ node_modules/
 dist/
 build/*
 !build/icon.ico
+!build/icon.png
 *.log
 .DS_Store
 
