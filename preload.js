@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('deepseekex', {
   getSettings: () => ipcRenderer.invoke('desktop:get-settings'),
   saveSettings: (patch) => ipcRenderer.invoke('desktop:save-settings', patch),
   refreshBalance: () => ipcRenderer.invoke('desktop:refresh-balance'),
+  shellUpdateCheck: () => ipcRenderer.invoke('desktop:shell-update-check'),
+  shellUpdateApply: () => ipcRenderer.invoke('desktop:shell-update-apply'),
   pickWorkspace: () => ipcRenderer.invoke('desktop:pick-workspace'),
   checkUpdate: () => ipcRenderer.invoke('desktop:check-update'),
   applyUpdate: () => ipcRenderer.invoke('desktop:apply-update'),

@@ -76,7 +76,10 @@ const state = {
   settings: {},
   themePreference: 'system', // 'light' | 'dark' | 'system' (dsh UI's own setting)
   balance: null, // DeepSeek platform balance telemetry ({ok,...} | null)
+  shellUpdate: null, // shell self-update telemetry ({available,version,progress,...} | null)
 }
+
+let shellUpdater = null
 
 function broadcast() {
   state.logsTail = log.tail()
@@ -96,6 +99,36 @@ async function refreshBalance() {
   const home = dshHomeDir()
   state.balance = await balance.fetchBalance(home)
   broadcast()
+}
+
+/** Initialize the shell self-updater and mirror its events into state. */
+function initShellUpdater() {
+  if (shellUpdater) return
+  const { createShellUpdater } = require('./shell-updater.js')
+  shellUpdater = createShellUpdater({
+    onState: (s) => {
+      state.shellUpdate = s
+      broadcast()
+      // reuse the top-bar progress bar for shell download progress
+      if (s.status === 'downloading' && typeof s.progress === 'number') {
+        sendProgress(s.progress, 'SHELL UPDATE')
+      } else if (s.status === 'downloaded') {
+        sendProgress(100, 'SHELL READY')
+      } else if (s.status === 'installing') {
+        sendProgress(100, 'INSTALLING')
+      }
+    },
+  })
+}
+
+/** Best-effort shell update check (auto-updater tolerates dev mode). */
+async function checkShellUpdate() {
+  try {
+    initShellUpdater()
+    await shellUpdater.check()
+  } catch (err) {
+    log.warn(`shell update check failed: ${err.message}`)
+  }
 }
 
 /** Main boot pipeline; retryable from the UI. */
@@ -150,6 +183,9 @@ async function boot() {
     setInterval(() => {
       if (state.phase === 'ready') void refreshBalance().catch(() => {})
     }, 5 * 60_000).unref?.()
+
+    // Shell self-update check (GitHub Releases), silent and non-blocking.
+    void checkShellUpdate().catch(() => {})
 
     if (settings.autoCheck) {
       try {
@@ -376,6 +412,17 @@ ipcMain.handle('desktop:get-settings', () => ({ ...settings }))
 ipcMain.handle('desktop:refresh-balance', async () => {
   await refreshBalance()
   return state.balance
+})
+
+// Shell self-update: check / apply. Dev-mode and network failures degrade
+// gracefully (autoUpdater throws and the module reports {ok:false}).
+ipcMain.handle('desktop:shell-update-check', async () => {
+  initShellUpdater()
+  return shellUpdater.check()
+})
+ipcMain.handle('desktop:shell-update-apply', async () => {
+  initShellUpdater()
+  return shellUpdater.apply()
 })
 
 // Workspace switch: native folder dialog in the shell, then persist + restart.

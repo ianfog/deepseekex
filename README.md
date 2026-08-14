@@ -57,7 +57,8 @@ Deepseekex (Electron 壳 — 稳定层)
 ├─ 主进程
 │  ├─ 内核管理器  版本化内核目录 + 原子切换 + 回滚
 │  ├─ 后端启动器  spawn 内核 (dsh web --port 0) → 探测 /probe → 窗口加载
-│  └─ 更新器      npm registry latest（上游 GitHub 源码的官方发布渠道）
+│  ├─ 内核更新器  npm registry latest（上游 GitHub 源码的官方发布渠道）
+│  └─ 壳更新器    electron-updater ← GitHub Releases（ianfog/deepseekex）
 ├─ 内核 (可更新层)  <userData>/kernels/<version>/  ← npm install @deepseek-ai/dsh
 └─ 数据/配置      默认共享 ~/.dsh（可通过设置改 DSH_HOME）
 ```
@@ -66,6 +67,10 @@ Deepseekex (Electron 壳 — 稳定层)
 - 无需捆绑 Node：用 `ELECTRON_RUN_AS_NODE=1` 让 Electron 自带的 Node（43.x → Node 24）直接跑内核。
 - 更新即"换内核"：下载安装新版 `@deepseek-ai/dsh`（npm 是上游 GitHub 源码的官方发布渠道），
   启动验证通过后原子切换 active 指针并重启后端；旧内核保留用于回滚。
+- 壳自更新：`main/shell-updater.js` 用 electron-updater 检查 GitHub Releases 的 `latest.yml`
+  （`build.publish` 配置，NSIS 目标自动生成），顶栏按钮优先显示壳更新（`更新壳到 vX`），
+  下载进度复用进度条，下载完成后一键重启安装；开发模式（无 app-update.yml）自动降级为
+  `{ok:false}` 不抛错。
 - 崩溃自愈：内核进程异常退出自动重启，连续崩溃自动回滚到上一个内核版本。
 
 ## 内核更新

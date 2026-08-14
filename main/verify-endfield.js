@@ -57,6 +57,8 @@ contextBridge.exposeInMainWorld('deepseekex', {
   onEvent: (cb) => pending.push(cb),
   onProgress: (cb) => pendingProgress.push(cb),
   refreshBalance: () => Promise.resolve({ ok: true, total: 1.94, granted: 0, toppedUp: 1.94, currency: 'CNY', isAvailable: true, low: true }),
+  shellUpdateCheck: () => Promise.resolve({ ok: true, available: false }),
+  shellUpdateApply: () => Promise.resolve({ ok: true }),
   __setState: (s) => { state = s; for (const cb of pending) cb({ type: 'state', state }); },
   __progress: (pct, label) => { for (const cb of pendingProgress) cb({ pct, label }); },
 });
@@ -151,6 +153,22 @@ async function main() {
     };
   })()`)
   console.log('BALANCE:', JSON.stringify(balanceCheck, null, 1))
+
+  // shell update telemetry: availability flips the update button
+  const shellCheck = await chrome.webContents.executeJavaScript(`(async () => {
+    window.deepseekex.__setState({ phase:'ready', kernelVersion:'0.1.0-rc.6',
+      latestVersion:'0.1.0-rc.6', updateAvailable:false, backendUrl:${JSON.stringify(url)},
+      source:null, message:'ready', logsTail:[], themePreference:'dark', balance:null,
+      shellUpdate:{ available:true, version:'0.2.0', status:'available', progress:null } });
+    await new Promise(r => setTimeout(r, 250));
+    const btn = document.getElementById('updateBtn');
+    return {
+      btnText: btn.textContent,
+      btnCls: btn.className,
+      btnHidden: btn.hidden,
+    };
+  })()`)
+  console.log('SHELL UPDATE:', JSON.stringify(shellCheck, null, 1))
 
   // ---- patch the dsh surface via the webFrameMain path (same as main) ----
   const frame = await waitFor(() => {

@@ -96,9 +96,27 @@ function render(s) {
     els.spinner.style.display = s.phase === 'updating' || s.phase === 'starting' ? '' : 'none'
   }
 
-  // Update button
+  // Update button: shell self-update takes priority over kernel update.
+  const shell = s.shellUpdate
+  const shellAction =
+    shell && (shell.available || shell.status === 'downloading' || shell.status === 'downloaded' || shell.status === 'installing')
   if (s.phase === 'updating') {
     els.updateBtn.hidden = true
+  } else if (shellAction && shell.status === 'downloading') {
+    els.updateBtn.hidden = false
+    els.updateBtn.textContent = `下载壳 ${shell.version || ''} ${shell.progress != null ? shell.progress + '%' : ''}`
+    els.updateBtn.className = 'btn ghost'
+    els.updateBtn.disabled = true
+  } else if (shellAction && (shell.status === 'downloaded' || shell.status === 'installing')) {
+    els.updateBtn.hidden = false
+    els.updateBtn.textContent = '重启完成更新'
+    els.updateBtn.className = 'btn warn'
+    els.updateBtn.disabled = false
+  } else if (shellAction && shell.available) {
+    els.updateBtn.hidden = false
+    els.updateBtn.textContent = `更新壳到 ${shell.version}`
+    els.updateBtn.className = 'btn warn'
+    els.updateBtn.disabled = false
   } else if (s.updateAvailable) {
     els.updateBtn.hidden = false
     els.updateBtn.textContent = `更新到 ${s.latestVersion}`
@@ -144,6 +162,20 @@ api.onProgress(({ pct, label }) => {
 })
 
 els.updateBtn.addEventListener('click', async () => {
+  const shell = state && state.shellUpdate
+  // Shell update available: download then restart to install.
+  if (shell && (shell.available || shell.status === 'downloaded' || shell.status === 'downloading')) {
+    if (shell.status === 'downloaded') {
+      if (!window.confirm('壳更新已下载，确定现在重启并安装吗？')) return
+    } else if (!window.confirm(`确定要更新壳到 ${shell.version} 吗？`)) {
+      return
+    }
+    els.updateBtn.disabled = true
+    showProgress(0, 'SHELL QUEUED')
+    await api.shellUpdateApply()
+    return
+  }
+  // Kernel update.
   if (state && state.updateAvailable) {
     if (!window.confirm(`确定要更新内核到 ${state.latestVersion} 吗？更新后会自动重启。`)) return
     els.updateBtn.disabled = true
@@ -153,6 +185,8 @@ els.updateBtn.addEventListener('click', async () => {
     els.updateBtn.disabled = true
     showProgress(0, 'CHECK QUEUED')
     await api.checkUpdate()
+    // also refresh the shell update check in the same pass
+    await api.shellUpdateCheck()
     els.updateBtn.disabled = false
   }
 })
