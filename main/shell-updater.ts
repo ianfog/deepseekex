@@ -12,7 +12,26 @@
  * @module deepseekex/shell-updater
  */
 
-const log = require('./log.js')
+const log = require('./log.ts')
+
+/** Snapshot pushed to the renderer through the `onState` callback. */
+type ShellUpdateState = {
+  available: boolean
+  version: string | null
+  downloading: boolean
+  downloaded: boolean
+  status: string
+  message?: string
+  progress?: number
+}
+
+/** Per-event fields merged into the base snapshot by `emit`. */
+type ShellUpdatePatch = {
+  status: string
+  message?: string
+  progress?: number
+  version?: string
+}
 
 /**
  * Wrap autoUpdater and wire events. Safe in dev mode (no app-update.yml) and
@@ -22,15 +41,15 @@ const log = require('./log.js')
  *   `{ available, version, progress, status, message }` snapshots.
  * @returns {{ check: () => Promise<object>, apply: () => Promise<object> }}
  */
-function createShellUpdater({ onState = () => {} }) {
+function createShellUpdater({ onState = () => {} }: { onState?: (state: ShellUpdateState) => void }) {
   const { autoUpdater } = require('electron-updater')
 
-  let latestVersion = null
+  let latestVersion: string | null = null
   let available = false
   let downloading = false
   let downloaded = false
 
-  const emit = (patch) => onState({
+  const emit = (patch: ShellUpdatePatch) => onState({
     available,
     version: latestVersion,
     downloading,
@@ -42,7 +61,7 @@ function createShellUpdater({ onState = () => {} }) {
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('checking-for-update', () => emit({ status: 'checking', message: '正在检查壳更新…' }))
-  autoUpdater.on('update-available', (info) => {
+  autoUpdater.on('update-available', (info: { version: string }) => {
     latestVersion = info.version
     available = true
     emit({ status: 'available', message: `发现新版本 ${info.version}` })
@@ -50,15 +69,15 @@ function createShellUpdater({ onState = () => {} }) {
   autoUpdater.on('update-not-available', () => {
     emit({ status: 'up-to-date', message: '壳已是最新版本' })
   })
-  autoUpdater.on('download-progress', (p) => {
+  autoUpdater.on('download-progress', (p: { percent: number }) => {
     emit({ status: 'downloading', progress: Math.round(p.percent) })
   })
-  autoUpdater.on('update-downloaded', (info) => {
+  autoUpdater.on('update-downloaded', (info: { version: string }) => {
     downloaded = true
     downloading = false
     emit({ status: 'downloaded', version: info.version, progress: 100 })
   })
-  autoUpdater.on('error', (err) => {
+  autoUpdater.on('error', (err: Error) => {
     log.warn(`shell updater error: ${err.message}`)
     emit({ status: 'error', message: err.message })
   })
@@ -68,7 +87,7 @@ function createShellUpdater({ onState = () => {} }) {
     try {
       await autoUpdater.checkForUpdates()
       return { ok: true, available, version: latestVersion }
-    } catch (err) {
+    } catch (err: any) {
       log.warn(`shell update check failed: ${err.message}`)
       emit({ status: 'error', message: err.message })
       return { ok: false, available: false, message: err.message }
@@ -86,7 +105,7 @@ function createShellUpdater({ onState = () => {} }) {
       emit({ status: 'installing', message: '正在安装并重启…' })
       autoUpdater.quitAndInstall(false, true)
       return { ok: true }
-    } catch (err) {
+    } catch (err: any) {
       downloading = false
       log.warn(`shell update apply failed: ${err.message}`)
       emit({ status: 'error', message: err.message })

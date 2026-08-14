@@ -11,10 +11,13 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
-const { npmDir, npmCacheDir } = require('./paths.js')
-const { httpGetJson, download } = require('./net.js')
-const { extractTgz } = require('./tar-extract.js')
-const log = require('./log.js')
+const { npmDir, npmCacheDir } = require('./paths.ts')
+const { httpGetJson, download } = require('./net.ts')
+const { extractTgz } = require('./tar-extract.ts')
+const log = require('./log.ts')
+
+/** App settings shape, as read from `<userData>/settings.json`. */
+type Settings = { dshHome?: string; npmRegistry?: string; autoCheck?: boolean }
 
 /** Fallback when the registry cannot answer `npm/latest`. */
 const FALLBACK_NPM_VERSION = '11.6.2'
@@ -22,7 +25,7 @@ const FALLBACK_NPM_VERSION = '11.6.2'
 const MIRROR_REGISTRY = 'https://registry.npmmirror.com/'
 
 /** The effective npm registry base URL (trailing slash). */
-function registryBase(settings) {
+function registryBase(settings: Settings): string {
   const r = (settings.npmRegistry || 'https://registry.npmjs.org/').trim()
   return r.endsWith('/') ? r : `${r}/`
 }
@@ -34,13 +37,17 @@ function registryBase(settings) {
  * @param {(msg: string) => void} onProgress
  * @returns {Promise<{ cli: string, version: string }>} npm-cli.js path and version.
  */
-async function ensureNpmCli(userData, settings, onProgress = () => {}) {
+async function ensureNpmCli(
+  userData: string,
+  settings: Settings,
+  onProgress: (msg: string) => void = () => {},
+): Promise<{ cli: string; version: string }> {
   const registry = registryBase(settings)
   let version
   try {
     version = (await httpGetJson(`${registry}npm/latest`)).version
   } catch (err) {
-    log.warn(`npm/latest unreachable (${err.message}); using fallback ${FALLBACK_NPM_VERSION}`)
+    log.warn(`npm/latest unreachable (${(err as Error).message}); using fallback ${FALLBACK_NPM_VERSION}`)
     version = FALLBACK_NPM_VERSION
   }
   const cli = path.join(npmDir(userData), version, 'node_modules', 'npm', 'bin', 'npm-cli.js')
@@ -81,8 +88,24 @@ async function ensureNpmCli(userData, settings, onProgress = () => {}) {
  * @param {object} opts - `{ npmCli, nodeBin, cwd, registry, cacheDir, electronAsNode, onOutput }`.
  * @returns {Promise<void>} resolves when npm exits 0.
  */
-async function runNpmInstall({ npmCli, nodeBin, cwd, registry, cacheDir, electronAsNode, onOutput = () => {} }) {
-  return new Promise((resolve, reject) => {
+async function runNpmInstall({
+  npmCli,
+  nodeBin,
+  cwd,
+  registry,
+  cacheDir,
+  electronAsNode,
+  onOutput = () => {},
+}: {
+  npmCli: string
+  nodeBin: string
+  cwd: string
+  registry: string
+  cacheDir: string
+  electronAsNode: boolean
+  onOutput?: (line: string) => void
+}): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const args = [
       npmCli,
       'install',
@@ -99,7 +122,7 @@ async function runNpmInstall({ npmCli, nodeBin, cwd, registry, cacheDir, electro
     if (electronAsNode) env.ELECTRON_RUN_AS_NODE = '1'
     const child = spawn(nodeBin, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
     let output = ''
-    const onChunk = (chunk) => {
+    const onChunk = (chunk: Buffer) => {
       output += chunk.toString()
       const line = chunk.toString().trim()
       if (line) onOutput(line)
@@ -107,7 +130,7 @@ async function runNpmInstall({ npmCli, nodeBin, cwd, registry, cacheDir, electro
     child.stdout.on('data', onChunk)
     child.stderr.on('data', onChunk)
     child.on('error', reject)
-    child.on('exit', (code, signal) => {
+    child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
       if (code === 0) resolve()
       else reject(new Error(`npm install exited ${code ?? signal}\n${output.slice(-3000)}`))
     })

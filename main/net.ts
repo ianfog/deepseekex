@@ -7,7 +7,7 @@
 const fs = require('node:fs')
 
 /** GET a JSON document with a timeout. */
-async function httpGetJson(url, { timeoutMs = 20_000, headers = {} } = {}) {
+async function httpGetJson(url: string, { timeoutMs = 20_000, headers = {} }: { timeoutMs?: number; headers?: Record<string, string> } = {}): Promise<any> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -23,7 +23,7 @@ async function httpGetJson(url, { timeoutMs = 20_000, headers = {} } = {}) {
 }
 
 /** Download a URL to a file, returning the byte count. */
-async function download(url, dest, { timeoutMs = 300_000 } = {}) {
+async function download(url: string, dest: string, { timeoutMs = 300_000 }: { timeoutMs?: number } = {}): Promise<number> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {

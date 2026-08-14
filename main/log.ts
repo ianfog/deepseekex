@@ -7,18 +7,18 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { mainLogFile } = require('./paths.js')
+const { mainLogFile } = require('./paths.ts')
 
-let logFile = null
-const tail = []
+let logFile: string | null = null
+const tail: string[] = []
 
 /** Point the logger at a userData dir (idempotent; call once at boot). */
-function init(userData) {
+function init(userData: string) {
   logFile = mainLogFile(userData)
   fs.mkdirSync(path.dirname(logFile), { recursive: true })
 }
 
-function write(level, msg) {
+function write(level: string, msg: string) {
   const line = `${new Date().toISOString()} [${level}] ${msg}`
   // eslint-disable-next-line no-console
   console.log(line)
@@ -35,9 +35,9 @@ function write(level, msg) {
 
 module.exports = {
   init,
-  info: (m) => write('info', m),
-  warn: (m) => write('warn', m),
-  error: (m) => write('error', m),
+  info: (m: string) => write('info', m),
+  warn: (m: string) => write('warn', m),
+  error: (m: string) => write('error', m),
   /** Recent log lines for the UI log panel. */
   tail: () => [...tail],
 }

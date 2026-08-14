@@ -10,8 +10,8 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const jsyaml = require('js-yaml')
-const { httpGetJson } = require('./net.js')
-const log = require('./log.js')
+const { httpGetJson } = require('./net.ts')
+const log = require('./log.ts')
 
 /** Official balance endpoint (Bearer auth). */
 const BALANCE_URL = 'https://api.deepseek.com/user/balance'
@@ -19,7 +19,7 @@ const BALANCE_URL = 'https://api.deepseek.com/user/balance'
 const LOW_BALANCE = 10
 
 /** Read `DEEPSEEK_API_KEY` from the credentials document (null when absent). */
-function readApiKey(dshHome) {
+function readApiKey(dshHome: string): string | null {
   try {
     const file = path.join(dshHome, '.credentials.yaml')
     if (!fs.existsSync(file)) return null
@@ -27,7 +27,7 @@ function readApiKey(dshHome) {
     const key = doc && typeof doc === 'object' ? doc.DEEPSEEK_API_KEY : undefined
     return typeof key === 'string' && key.trim() ? key.trim() : null
   } catch (err) {
-    log.warn(`balance: credentials read failed: ${err.message}`)
+    log.warn(`balance: credentials read failed: ${(err as Error).message}`)
     return null
   }
 }
@@ -39,7 +39,7 @@ function readApiKey(dshHome) {
  *   - `{ ok: true, total, granted, toppedUp, currency, isAvailable, low, at }`
  *   - `{ ok: false, reason: 'no-key' | 'error', message, at }`
  */
-async function fetchBalance(dshHome) {
+async function fetchBalance(dshHome: string): Promise<any> {
   const at = new Date().toISOString()
   const key = readApiKey(dshHome)
   if (!key) return { ok: false, reason: 'no-key', message: '未配置 DEEPSEEK_API_KEY', at }
@@ -63,8 +63,8 @@ async function fetchBalance(dshHome) {
       at,
     }
   } catch (err) {
-    log.warn(`balance: query failed: ${err.message}`)
-    return { ok: false, reason: 'error', message: err.message, at }
+    log.warn(`balance: query failed: ${(err as Error).message}`)
+    return { ok: false, reason: 'error', message: (err as Error).message, at }
   }
 }
 

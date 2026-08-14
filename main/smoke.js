@@ -1,4 +1,4 @@
-'use strict'
+﻿'use strict'
 /**
  * Headless end-to-end smoke test (no Electron GUI): boots the npm CLI, installs
  * the latest dsh kernel from the registry, starts the backend on a random port,
@@ -18,15 +18,15 @@ const userData =
 const smokeHome =
   process.env.DSH_DESKTOP_SMOKE_HOME || path.join(os.tmpdir(), 'deepseekex-smoke-dsh-home')
 
-const paths = require('./paths.js')
-const log = require('./log.js')
+const paths = require('./paths.ts')
+const log = require('./log.ts')
 log.init(userData)
 process.env.DSH_DESKTOP_USERDATA = userData
 
-const npm = require('./npm.js')
-const kernel = require('./kernel.js')
-const updater = require('./updater.js')
-const { Backend } = require('./backend.js')
+const npm = require('./npm.ts')
+const kernel = require('./kernel.ts')
+const updater = require('./updater.ts')
+const { Backend } = require('./backend.ts')
 
 async function main() {
   const settings = { npmRegistry: process.env.DSH_DESKTOP_NPM_REGISTRY || '', autoCheck: true }

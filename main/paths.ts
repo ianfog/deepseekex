@@ -27,45 +27,45 @@ function userDataDir() {
 }
 
 /** Versioned kernel roots: `<userData>/kernels/<version>/`. */
-function kernelsDir(userData) {
+function kernelsDir(userData: string) {
   return path.join(userData, 'kernels')
 }
 
 /** The active-version pointer file. */
-function activeFile(userData) {
+function activeFile(userData: string) {
   return path.join(kernelsDir(userData), 'active.json')
 }
 
 /** One kernel version's install directory. */
-function kernelDir(userData, version) {
+function kernelDir(userData: string, version: string) {
   return path.join(kernelsDir(userData), version)
 }
 
 /** The installed `@deepseek-ai/dsh` package root inside a kernel dir. */
-function kernelDshDir(kernelRoot) {
+function kernelDshDir(kernelRoot: string) {
   return path.join(kernelRoot, 'node_modules', '@deepseek-ai', 'dsh')
 }
 
 /** The npm CLI cache used by kernel installs. */
-function npmCacheDir(userData) {
+function npmCacheDir(userData: string) {
   return path.join(userData, 'npm-cache')
 }
 
 /** Root that holds the bootstrapped npm CLI: `<userData>/npm/<version>/node_modules/npm`. */
-function npmDir(userData) {
+function npmDir(userData: string) {
   return path.join(userData, 'npm')
 }
 
-function mainLogFile(userData) {
+function mainLogFile(userData: string) {
   return path.join(userData, 'logs', 'main.log')
 }
 
-function settingsFile(userData) {
+function settingsFile(userData: string) {
   return path.join(userData, 'settings.json')
 }
 
 /** Settings singleton, freshly read from disk. */
-function readSettings(userData) {
+function readSettings(userData: string) {
   try {
     const raw = JSON.parse(require('node:fs').readFileSync(settingsFile(userData), 'utf8').replace(/^\uFEFF/, ''))
     return {

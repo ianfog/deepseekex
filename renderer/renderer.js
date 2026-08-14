@@ -1,10 +1,44 @@
+// @ts-check
 'use strict'
 /**
  * Chrome renderer logic: reflects main-process state onto the top bar,
  * drives the dsh webview, and wires the update/settings/log UI.
+ * Type-checked via JSDoc (tsconfig covers this file with allowJs).
  */
 
-const api = window.deepseekex
+/** @typedef {{
+ *   phase: string,
+ *   kernelVersion: string|null,
+ *   latestVersion: string|null,
+ *   updateAvailable: boolean,
+ *   backendUrl: string|null,
+ *   source: {sha:string, date:string|null}|null,
+ *   message: string,
+ *   logsTail: string[],
+ *   themePreference: string,
+ *   balance: ({ok:true, total:number, currency:string, isAvailable:boolean, low:boolean, toppedUp:number, granted:number}|{ok:false, reason?:string, message?:string})|null,
+ *   shellUpdate: {available:boolean, version:string|null, status?:string, progress?:number}|null
+ * }} AppState */
+
+/** @typedef {{
+ *   getState(): Promise<AppState>,
+ *   getSettings(): Promise<{dshHome?:string, npmRegistry?:string, autoCheck?:boolean}>,
+ *   saveSettings(p: {dshHome?:string, npmRegistry?:string, autoCheck?:boolean}): Promise<unknown>,
+ *   refreshBalance(): Promise<{ok:boolean, total?:number, currency?:string, isAvailable?:boolean, low?:boolean, reason?:string} | null>,
+ *   shellUpdateCheck(): Promise<{ok:boolean, available?:boolean, version?:string|null} | null>,
+ *   shellUpdateApply(): Promise<{ok:boolean, message?:string} | null>,
+ *   pickWorkspace(): Promise<unknown>,
+ *   checkUpdate(): Promise<unknown>,
+ *   applyUpdate(): Promise<unknown>,
+ *   restartBackend(): Promise<unknown>,
+ *   retryBoot(): Promise<unknown>,
+ *   onEvent(cb: (ev: {type:string, state:AppState}) => void): void,
+ *   onProgress(cb: (p: {pct:number, label:string}) => void): void
+ * }} Api */
+
+/** @type {Api} */
+const api = /** @type {Api} */ (window.deepseekex)
+/** @param {string} id @returns {any} */
 const $ = (id) => document.getElementById(id)
 
 const els = {
@@ -39,13 +73,17 @@ const els = {
   settingsCancel: $('settingsCancel'),
 }
 
+/** @type {AppState|null} */
 let state = null
+/** @type {string|null} */
 let loadedUrl = null
 
+/** @param {string} phase */
 function setDot(phase) {
   els.statusDot.className = 'dot ' + (phase === 'ready' ? 'ok' : phase === 'error' ? 'err' : 'busy')
 }
 
+/** @param {AppState} s */
 function render(s) {
   state = s
   setDot(s.phase)
@@ -140,6 +178,13 @@ api.onEvent((ev) => {
 })
 
 /** Update the telemetry progress bar; auto-hide shortly after 100%. */
+/** @type {ReturnType<typeof setTimeout>|null} */
+let progressHideTimer = null
+/**
+ * @param {number} pct
+ * @param {string} label
+ * @param {string|null} [cls]
+ */
 function showProgress(pct, label, cls) {
   els.updateProgress.hidden = false
   els.updateProgress.classList.remove('done', 'fault')
@@ -148,8 +193,8 @@ function showProgress(pct, label, cls) {
   els.updateProgressLabel.textContent = `${label} ${pct}%`
   els.updateProgress.setAttribute('aria-valuenow', String(pct))
   if (pct >= 100) {
-    clearTimeout(showProgress._hide)
-    showProgress._hide = setTimeout(() => {
+    if (progressHideTimer) clearTimeout(progressHideTimer)
+    progressHideTimer = setTimeout(() => {
       els.updateProgress.hidden = true
       els.updateProgressFill.style.width = '0%'
     }, 1600)
@@ -200,8 +245,9 @@ els.workspaceBtn.addEventListener('click', async () => {
 // Click the balance cell to refresh it live (button-like affordance).
 els.balanceCell.addEventListener('click', async () => {
   els.balanceChip.textContent = '…'
+  /** @type {{ok:boolean, total?:number, currency?:string, isAvailable?:boolean, low?:boolean, reason?:string}|null} */
   const b = await api.refreshBalance()
-  if (b && b.ok) {
+  if (b && b.ok && typeof b.total === 'number') {
     const symbol = b.currency === 'USD' ? '$' : '¥'
     els.balanceChip.textContent = `${symbol}${b.total.toFixed(2)}`
     els.balanceChip.className = 'cell-value' + (b.isAvailable ? '' : ' fault') + (b.low ? ' low' : '')

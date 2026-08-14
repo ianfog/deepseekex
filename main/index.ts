@@ -13,13 +13,13 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const semver = require('semver')
 const jsyaml = require('js-yaml')
-const paths = require('./paths.js')
-const log = require('./log.js')
-const npm = require('./npm.js')
-const kernel = require('./kernel.js')
-const updater = require('./updater.js')
-const { Backend } = require('./backend.js')
-const uiPatch = require('./ui-patch.js')
+const paths = require('./paths.ts')
+const log = require('./log.ts')
+const npm = require('./npm.ts')
+const kernel = require('./kernel.ts')
+const updater = require('./updater.ts')
+const { Backend } = require('./backend.ts')
+const uiPatch = require('./ui-patch.ts')
 
 /**
  * Resolve the Node runtime for backend/kernel processes. Prefers a real Node
@@ -36,8 +36,8 @@ async function resolveNodeBin() {
   const { execFile } = require('node:child_process')
   for (const candidate of candidates) {
     try {
-      const version = await new Promise((resolve, reject) => {
-        execFile(candidate, ['--version'], { timeout: 5000 }, (err, stdout) => {
+      const version = await new Promise((resolve: (v: string) => void, reject: (e: Error) => void) => {
+        execFile(candidate, ['--version'], { timeout: 5000 }, (err: Error | null, stdout: string) => {
           if (err) return reject(err)
           resolve(String(stdout).trim())
         })
@@ -56,15 +56,57 @@ async function resolveNodeBin() {
 }
 
 let userData = ''
-let settings = {}
-let win = null
-let backend = null
-let npmCli = null
+let settings: { dshHome?: string; npmRegistry?: string; autoCheck?: boolean } = {}
+let win: import('electron').BrowserWindow | null = null
+/** Structural type of the Backend class. The CJS `module.exports = {Backend}`
+ *  shape can't be introspected via `typeof import()` under type stripping,
+ *  so index.ts declares the members it uses. */
+interface BackendLike {
+  start(
+    kernelRoot: string,
+    opts?: {
+      port?: number
+      dshHome?: string
+      trustedHosts?: string[]
+      bootTimeoutMs?: number
+      probeTimeoutMs?: number
+    },
+  ): Promise<string>
+  getUrl(): string | null
+  isRunning(): boolean
+  stop(): Promise<void>
+}
+let backend: BackendLike | null = null
+let npmCli: string | null = null
 let exitCount = 0
 let rollbackAttempted = false
 let nodeBin = process.execPath
 let electronAsNode = true
-const state = {
+/** Shape of the shell-update telemetry mirrored into state. */
+interface ShellUpdateState {
+  available: boolean
+  version: string | null
+  downloading: boolean
+  downloaded: boolean
+  status?: string
+  progress?: number
+  message?: string
+}
+
+const state: {
+  phase: string
+  kernelVersion: string | null
+  latestVersion: string | null
+  updateAvailable: boolean
+  backendUrl: string | null
+  source: { sha: string; date: string | null } | null
+  message: string
+  logsTail: string[]
+  settings: Record<string, unknown>
+  themePreference: string
+  balance: unknown
+  shellUpdate: ShellUpdateState | null
+} = {
   phase: 'starting', // starting | ready | updating | error | quitting
   kernelVersion: null,
   latestVersion: null,
@@ -79,7 +121,24 @@ const state = {
   shellUpdate: null, // shell self-update telemetry ({available,version,progress,...} | null)
 }
 
-let shellUpdater = null
+/** Structural type of the shell updater object (CJS exports can't be
+ *  introspected via typeof import() under type stripping). */
+interface ShellUpdaterLike {
+  check(): Promise<{ ok: boolean; available: boolean; version: string | null; message?: string }>
+  apply(): Promise<{ ok: boolean; message?: string }>
+}
+let shellUpdater: ShellUpdaterLike | null = null
+
+/** Shape of the shell-update telemetry mirrored into state. */
+interface ShellUpdateState {
+  available: boolean
+  version: string | null
+  downloading: boolean
+  downloaded: boolean
+  status?: string
+  progress?: number
+  message?: string
+}
 
 function broadcast() {
   state.logsTail = log.tail()
@@ -88,14 +147,14 @@ function broadcast() {
 }
 
 /** Push a check/update progress event to the chrome (0-100, uppercase label). */
-function sendProgress(pct, label) {
+function sendProgress(pct: number, label: string) {
   if (!win || win.isDestroyed()) return
   win.webContents.send('desktop:progress', { pct, label })
 }
 
 /** Refresh platform balance telemetry into state and broadcast (best-effort). */
 async function refreshBalance() {
-  const balance = require('./balance.js')
+  const balance = require('./balance.ts')
   const home = dshHomeDir()
   state.balance = await balance.fetchBalance(home)
   broadcast()
@@ -104,9 +163,9 @@ async function refreshBalance() {
 /** Initialize the shell self-updater and mirror its events into state. */
 function initShellUpdater() {
   if (shellUpdater) return
-  const { createShellUpdater } = require('./shell-updater.js')
+  const { createShellUpdater } = require('./shell-updater.ts')
   shellUpdater = createShellUpdater({
-    onState: (s) => {
+    onState: (s: ShellUpdateState) => {
       state.shellUpdate = s
       broadcast()
       // reuse the top-bar progress bar for shell download progress
@@ -125,9 +184,9 @@ function initShellUpdater() {
 async function checkShellUpdate() {
   try {
     initShellUpdater()
-    await shellUpdater.check()
+    await shellUpdater!.check()
   } catch (err) {
-    log.warn(`shell update check failed: ${err.message}`)
+    log.warn(`shell update check failed: ${(err as Error).message}`)
   }
 }
 
@@ -146,7 +205,7 @@ async function boot() {
 
     state.message = 'preparing npm CLI…'
     broadcast()
-    const cli = await npm.ensureNpmCli(userData, settings, (m) => {
+    const cli = await npm.ensureNpmCli(userData, settings, (m: string) => {
       state.message = m
       broadcast()
     })
@@ -156,7 +215,7 @@ async function boot() {
     try {
       latest = await updater.latestVersion(settings)
     } catch (err) {
-      log.warn(`registry unreachable at boot (${err.message}); continuing with local kernel if present`)
+      log.warn(`registry unreachable at boot (${(err as Error).message}); continuing with local kernel if present`)
     }
     const active = await kernel.ensureActive(userData, {
       latest,
@@ -164,7 +223,7 @@ async function boot() {
       npmCli: cli.cli,
       electronAsNode,
       settings,
-      onProgress: (m) => {
+      onProgress: (m: string) => {
         state.message = m
         broadcast()
       },
@@ -196,12 +255,12 @@ async function boot() {
         log.info(`update check: current=${check.current} latest=${check.latest} available=${check.updateAvailable}`)
         broadcast()
       } catch (err) {
-        log.warn(`update check failed: ${err.message}`)
+        log.warn(`update check failed: ${(err as Error).message}`)
       }
     }
   } catch (err) {
     state.phase = 'error'
-    state.message = err instanceof Error ? err.message : String(err)
+    state.message = err instanceof Error ? (err as Error).message : String(err)
     log.error(`boot failed: ${state.message}`)
     broadcast()
   }
@@ -212,7 +271,7 @@ async function startBackend() {
   if (backend) await backend.stop().catch(() => {})
   const dir = kernel.dirFor(userData, state.kernelVersion)
   backend = new Backend({ nodeBin, electronAsNode, onExit: handleBackendExit })
-  const url = await backend.start(dir, {
+  const url = await backend!.start(dir, {
     dshHome: settings.dshHome || undefined,
     bootTimeoutMs: 120_000,
     probeTimeoutMs: 20_000,
@@ -223,7 +282,7 @@ async function startBackend() {
 }
 
 /** Backend died: restart, then one-shot rollback to the previous kernel. */
-async function handleBackendExit(code, signal) {
+async function handleBackendExit(code: number | null, signal: string | null) {
   if (state.phase === 'quitting' || state.phase === 'updating') return
   log.warn(`backend exited unexpectedly (code ${code}, ${signal}); exit#${exitCount + 1}`)
   exitCount += 1
@@ -240,7 +299,7 @@ async function handleBackendExit(code, signal) {
       rollbackAttempted = true
       const previous = kernel
         .listInstalled(userData)
-        .filter((v) => v !== state.kernelVersion)
+        .filter((v: string) => v !== state.kernelVersion)
         .sort(semver.rcompare)[0]
       if (previous) {
         log.warn(`crash loop detected; rolling back kernel to ${previous}`)
@@ -257,8 +316,8 @@ async function handleBackendExit(code, signal) {
     }
   } catch (err) {
     state.phase = 'error'
-    state.message = `恢复失败: ${err.message}`
-    log.error(`recovery failed: ${err.message}`)
+    state.message = `恢复失败: ${(err as Error).message}`
+    log.error(`recovery failed: ${(err as Error).message}`)
   }
   broadcast()
 }
@@ -293,7 +352,7 @@ function createWindow() {
         }
       : {}),
     webPreferences: {
-      preload: path.join(__dirname, '..', 'preload.js'),
+      preload: path.join(__dirname, '..', 'preload.ts'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -301,21 +360,21 @@ function createWindow() {
   })
   // Open as a normal (non-maximized) window: size fits the work area without
   // covering the whole screen. Show once the page is paintable.
-  win.once('ready-to-show', () => {
-    win.show()
+  win!.once('ready-to-show', () => {
+    win!.show()
   })
   // The dsh UI lives in an in-page `<iframe>` (a plain DOM element: size
   // always follows the CSS box and the chrome DOM stacks above it, unlike a
   // native WebContentsView or a webview guest). External links from the dsh
   // UI open in the system browser.
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  win!.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) require('electron').shell.openExternal(url).catch(() => {})
     return { action: 'deny' }
   })
   // Apply the UI patch layer (Endfield styling) whenever the dsh iframe
   // finishes loading. Re-applied a couple of times because the ui-theme
   // plugin injects its stylesheets lazily after load.
-  win.webContents.on('did-frame-finish-load', (_e, isMainFrame, frameProcessId, frameRoutingId) => {
+  win!.webContents.on('did-frame-finish-load', (_e: Electron.Event, isMainFrame: boolean, frameProcessId: number, frameRoutingId: number) => {
     if (isMainFrame) return
     let frame = null
     try {
@@ -330,15 +389,15 @@ function createWindow() {
     const forceDark = readThemePreference() !== 'light'
     for (const delay of [0, 1000, 4000]) {
       setTimeout(() => {
-        if (win && !win.isDestroyed()) void uiPatch.applyUiPatches(win, { forceDark })
+        if (win && !win!.isDestroyed()) void uiPatch.applyUiPatches(win, { forceDark })
       }, delay)
     }
   })
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
-  win.on('closed', () => {
+  win!.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
+  win!.on('closed', () => {
     win = null
   })
-  if (process.env.DSH_DESKTOP_DEVTOOLS) win.webContents.openDevTools({ mode: 'detach' })
+  if (process.env.DSH_DESKTOP_DEVTOOLS) win!.webContents.openDevTools({ mode: 'detach' })
 }
 
 /** The dsh home directory the backend actually uses (settings override or default). */
@@ -355,7 +414,7 @@ function readThemePreference() {
     const pref = doc && typeof doc === 'object' ? doc['ui-theme']?.preference : undefined
     return pref === 'light' || pref === 'dark' ? pref : 'system'
   } catch (err) {
-    log.warn(`theme preference read failed: ${err.message}`)
+    log.warn(`theme preference read failed: ${(err as Error).message}`)
     return 'system'
   }
 }
@@ -377,7 +436,7 @@ function refreshThemePreference() {
  * @param {string} dir - absolute directory path to become the workspace.
  * @returns {Promise<void>}
  */
-async function switchWorkspace(dir) {
+async function switchWorkspace(dir: string) {
   const canonical = fs.realpathSync(dir)
   const title = path.basename(canonical)
   const id = crypto.randomUUID()
@@ -418,11 +477,11 @@ ipcMain.handle('desktop:refresh-balance', async () => {
 // gracefully (autoUpdater throws and the module reports {ok:false}).
 ipcMain.handle('desktop:shell-update-check', async () => {
   initShellUpdater()
-  return shellUpdater.check()
+  return shellUpdater!.check()
 })
 ipcMain.handle('desktop:shell-update-apply', async () => {
   initShellUpdater()
-  return shellUpdater.apply()
+  return shellUpdater!.apply()
 })
 
 // Workspace switch: native folder dialog in the shell, then persist + restart.
@@ -447,14 +506,14 @@ ipcMain.handle('desktop:pick-workspace', async () => {
     return { ok: true, path: result.filePaths[0] }
   } catch (err) {
     state.phase = 'error'
-    state.message = `切换工作区失败: ${err.message}`
-    log.error(`workspace switch failed: ${err.message}`)
+    state.message = `切换工作区失败: ${(err as Error).message}`
+    log.error(`workspace switch failed: ${(err as Error).message}`)
     broadcast()
-    return { ok: false, message: err.message }
+    return { ok: false, message: (err as Error).message }
   }
 })
 
-ipcMain.handle('desktop:save-settings', async (_e, patch) => {
+ipcMain.handle('desktop:save-settings', async (_e: Electron.IpcMainInvokeEvent, patch: { dshHome?: string; npmRegistry?: string; autoCheck?: boolean }) => {
   settings = {
     dshHome: typeof patch.dshHome === 'string' ? patch.dshHome.trim() : settings.dshHome,
     npmRegistry: typeof patch.npmRegistry === 'string' ? patch.npmRegistry.trim() : settings.npmRegistry,
@@ -473,7 +532,7 @@ ipcMain.handle('desktop:save-settings', async (_e, patch) => {
       broadcast()
     } catch (err) {
       state.phase = 'error'
-      state.message = `应用设置失败: ${err.message}`
+      state.message = `应用设置失败: ${(err as Error).message}`
       broadcast()
     }
   }
@@ -488,7 +547,7 @@ ipcMain.handle('desktop:check-update', async () => {
     const check = await updater.check({
       settings,
       current: state.kernelVersion,
-      onProgress: (pct, label) => sendProgress(pct, label),
+      onProgress: (pct: number, label: string) => sendProgress(pct, label),
     })
     state.latestVersion = check.latest
     state.updateAvailable = check.updateAvailable
@@ -499,9 +558,9 @@ ipcMain.handle('desktop:check-update', async () => {
     broadcast()
     return { ok: true, ...check }
   } catch (err) {
-    state.message = `检查更新失败: ${err.message}`
+    state.message = `检查更新失败: ${(err as Error).message}`
     broadcast()
-    return { ok: false, message: err.message }
+    return { ok: false, message: (err as Error).message }
   }
 })
 
@@ -527,10 +586,10 @@ ipcMain.handle('desktop:apply-update', async () => {
       nodeBin,
       npmCli,
       electronAsNode,
-      onProgress: (m) => {
+      onProgress: (m: string) => {
         state.message = m
         broadcast()
-        const pct = stagePct[m]
+        const pct = (stagePct as Record<string, number>)[m]
         if (pct != null) {
           sendProgress(pct, m.slice(0, 32).toUpperCase())
         } else if (/installing kernel|npm install/.test(m)) {
@@ -555,8 +614,8 @@ ipcMain.handle('desktop:apply-update', async () => {
     }
   } catch (err) {
     state.phase = 'ready'
-    state.message = `更新失败: ${err.message}`
-    log.error(`update failed: ${err.message}`)
+    state.message = `更新失败: ${(err as Error).message}`
+    log.error(`update failed: ${(err as Error).message}`)
     sendProgress(100, 'UPDATE FAILED')
   }
   broadcast()
@@ -575,9 +634,9 @@ ipcMain.handle('desktop:restart-backend', async () => {
     return { ok: true }
   } catch (err) {
     state.phase = 'error'
-    state.message = `重启失败: ${err.message}`
+    state.message = `重启失败: ${(err as Error).message}`
     broadcast()
-    return { ok: false, message: err.message }
+    return { ok: false, message: (err as Error).message }
   }
 })
 
@@ -608,7 +667,7 @@ if (!gotLock) {
   })
 
   let quitting = false
-  app.on('before-quit', (e) => {
+  app.on('before-quit', (e: Electron.Event) => {
     if (backend && backend.isRunning() && !quitting) {
       e.preventDefault()
       quitting = true

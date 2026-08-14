@@ -1,4 +1,4 @@
-'use strict'
+﻿'use strict'
 /**
  * Endfield UI verification harness. Starts a private dsh backend, loads the
  * shell chrome with a stubbed preload (so the chrome renders in the "ready"
@@ -17,14 +17,14 @@ const { app, BrowserWindow, webFrameMain } = require('electron')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const uiPatch = require('./ui-patch.js')
+const uiPatch = require('./ui-patch.ts')
 
 const kernelRoot =
   process.env.DSH_PROBE_KERNEL ||
   path.join(process.env.APPDATA, 'deepseekex', 'kernels', '0.1.0-rc.6')
 const verifyHome = process.env.DSH_VERIFY_HOME || path.join(os.tmpdir(), 'deepseekex-verify-home')
 const outDir = process.env.DSH_VERIFY_OUT || path.join(os.tmpdir(), 'deepseekex-verify')
-const { Backend } = require('./backend.js')
+const { Backend } = require('./backend.ts')
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)) }
 async function waitFor(fn, timeoutMs, stepMs = 300) {

@@ -65,9 +65,13 @@ Deepseekex (Electron 壳 — 稳定层)
 
 - 前端无需单独打包：`dsh-web-app` 的依赖链自带 `dsh-web-frontend` 编译产物，后端自己 serve。
 - 无需捆绑 Node：用 `ELECTRON_RUN_AS_NODE=1` 让 Electron 自带的 Node（43.x → Node 24）直接跑内核。
+- **TypeScript，零构建**：主进程（`main/*.ts`）与 `preload.ts` 用 Node 24 原生 type stripping 直接运行
+  （无编译步骤）；`npm run types`（`tsc --noEmit`）做全量类型检查。CJS 风格保持
+  （`require('./x.ts')` + `module.exports`），`tsconfig.json` 开 `erasableSyntaxOnly` 保证
+  只使用可擦除语法。renderer 是浏览器脚本，保留 `.js` + JSDoc `@ts-check`。
 - 更新即"换内核"：下载安装新版 `@deepseek-ai/dsh`（npm 是上游 GitHub 源码的官方发布渠道），
   启动验证通过后原子切换 active 指针并重启后端；旧内核保留用于回滚。
-- 壳自更新：`main/shell-updater.js` 用 electron-updater 检查 GitHub Releases 的 `latest.yml`
+- 壳自更新：`main/shell-updater.ts` 用 electron-updater 检查 GitHub Releases 的 `latest.yml`
   （`build.publish` 配置，NSIS 目标自动生成），顶栏按钮优先显示壳更新（`更新壳到 vX`），
   下载进度复用进度条，下载完成后一键重启安装；开发模式（无 app-update.yml）自动降级为
   `{ok:false}` 不抛错。
@@ -84,7 +88,7 @@ Deepseekex (Electron 壳 — 稳定层)
 
 ## 顶栏遥测与密钥安全
 
-- **余额遥测**：`SYS/BALANCE` 格展示 DeepSeek 平台余额（`main/balance.js` 读取
+- **余额遥测**：`SYS/BALANCE` 格展示 DeepSeek 平台余额（`main/balance.ts` 读取
   `$DSH_HOME/.credentials.yaml` 的 `DEEPSEEK_API_KEY`，调官方 `/user/balance` 接口；
   key 仅主进程使用，不进日志/渲染层）。点击该格可手动刷新，每 5 分钟自动刷新；
   低余额/不可用显示危险红。
@@ -96,6 +100,7 @@ Deepseekex (Electron 壳 — 稳定层)
 ```sh
 npm install
 npm start          # 启动 GUI（Windows / macOS）
+npm run types      # TypeScript 全量类型检查（tsc --noEmit，0 编译产物）
 npm run smoke      # 无头端到端验证（真实安装内核 + 启动后端 + 探测 + 检查更新）
 ```
 

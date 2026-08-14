@@ -18,15 +18,15 @@ const path = require('node:path')
  * @param {string} destDir - destination directory (created if missing).
  * @returns {Promise<string>} the archive's top-level directory name.
  */
-function extractTgz(tgzPath, destDir) {
+function extractTgz(tgzPath: string, destDir: string): Promise<string | null> {
   return new Promise((resolve, reject) => {
     const gunzip = zlib.createGunzip()
     const stream = fs.createReadStream(tgzPath).pipe(gunzip)
     let buffer = Buffer.alloc(0)
-    let topLevel = null
-    let longName = null
+    let topLevel: string | null = null
+    let longName: string | null = null
 
-    stream.on('data', (chunk) => {
+    stream.on('data', (chunk: Buffer) => {
       buffer = Buffer.concat([buffer, chunk])
       try {
         processBuffer()

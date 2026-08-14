@@ -250,7 +250,7 @@ const DARK_TOKENS = {
  * @param {string} selector - CSS selector for the theme block.
  * @param {Record<string,string>} tokens - token name → value map.
  */
-function tokensToCss(selector, tokens) {
+function tokensToCss(selector: string, tokens: Record<string, string>) {
   const body = Object.entries(tokens)
     .map(([k, v]) => `${k}:${v};`)
     .join('')
@@ -395,7 +395,7 @@ textarea:focus,input:focus,[contenteditable="true"]:focus{
  * system-light desktop would otherwise keep the stock near-identical light UI.
  * @param {boolean} forceDark
  */
-function patchJs(forceDark) {
+function patchJs(forceDark: boolean) {
   return `(() => {
     if (${forceDark}) {
       document.body.toggleAttribute('data-ds-dark-theme', true);
@@ -413,7 +413,7 @@ function buildUiPatchCss() {
 }
 
 /** The dsh UI's render frame inside the chrome page's iframe, when loaded. */
-function findSurfaceFrame(win) {
+function findSurfaceFrame(win: import('electron').BrowserWindow) {
   try {
     return win.webContents.mainFrame.frames.find((f) => /^https?:\/\/127\.0\.0\.1:\d+/.test(f.url))
   } catch {
@@ -430,11 +430,11 @@ function findSurfaceFrame(win) {
  *   (used when the persisted 配色 preference is not an explicit light choice).
  * @returns {Promise<void>}
  */
-async function applyUiPatches(win, { forceDark = false } = {}) {
+async function applyUiPatches(win: import('electron').BrowserWindow, { forceDark = false }: { forceDark?: boolean } = {}) {
   if (!win || win.isDestroyed()) return
   const frame = findSurfaceFrame(win)
   if (!frame) {
-    require('./log.js').warn('ui patch: surface frame not found')
+    require('./log.ts').warn('ui patch: surface frame not found')
     return
   }
   const css = buildUiPatchCss()
@@ -449,8 +449,8 @@ async function applyUiPatches(win, { forceDark = false } = {}) {
   })()`
   try {
     await frame.executeJavaScript(script)
-  } catch (err) {
-    require('./log.js').warn(`ui patch inject failed: ${err.message}`)
+  } catch (err: any) {
+    require('./log.ts').warn(`ui patch inject failed: ${err.message}`)
   }
 }
 

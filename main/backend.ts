@@ -10,17 +10,25 @@
 
 const { spawn } = require('node:child_process')
 const path = require('node:path')
-const log = require('./log.js')
+const log = require('./log.ts')
 
 /** The webserver prints its URL to stdout (web-runtime `printUrl: true`). */
 const URL_RE = /(https?:\/\/127\.0\.0\.1:\d+)/
 
 class Backend {
+  declare nodeBin: string
+  declare electronAsNode: boolean
+  declare onExit: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined
+  declare child: import('node:child_process').ChildProcess | null
+  declare url: string | null
+  declare stdoutTail: string
+  declare stderrTail: string
+
   /**
    * @param {object} opts - `{ nodeBin, electronAsNode, onExit }`. `onExit`
    *   receives `(code, signal)` when the child exits after startup settled.
    */
-  constructor({ nodeBin, electronAsNode, onExit }) {
+  constructor({ nodeBin, electronAsNode, onExit }: { nodeBin: string; electronAsNode?: boolean; onExit?: (code: number | null, signal: NodeJS.Signals | null) => void }) {
     this.nodeBin = nodeBin
     this.electronAsNode = !!electronAsNode
     this.onExit = onExit
@@ -36,7 +44,16 @@ class Backend {
    * @param {object} [opts] - `{ port, dshHome, trustedHosts, bootTimeoutMs, probeTimeoutMs }`.
    * @returns {Promise<string>} the base URL (http://127.0.0.1:<port>).
    */
-  start(kernelRoot, { port = 0, dshHome, trustedHosts = [], bootTimeoutMs = 90_000, probeTimeoutMs = 15_000 } = {}) {
+  start(
+    kernelRoot: string,
+    { port = 0, dshHome, trustedHosts = [], bootTimeoutMs = 90_000, probeTimeoutMs = 15_000 }: {
+      port?: number
+      dshHome?: string
+      trustedHosts?: string[]
+      bootTimeoutMs?: number
+      probeTimeoutMs?: number
+    } = {},
+  ): Promise<string> {
     const bin = path.join(kernelRoot, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
     // `--expose-internals` lets the vendored Loader reach Node's internal ESM
     // loader for HMR. Plain Node usually covers this via the
@@ -64,7 +81,7 @@ class Backend {
         }
       }, bootTimeoutMs)
 
-      const onStdout = (chunk) => {
+      const onStdout = (chunk: Buffer) => {
         const text = chunk.toString()
         this.stdoutTail += text
         if (this.stdoutTail.length > 64_000) this.stdoutTail = this.stdoutTail.slice(-64_000)
@@ -86,7 +103,7 @@ class Backend {
           }
         }
       }
-      const onStderr = (chunk) => {
+      const onStderr = (chunk: Buffer) => {
         this.stderrTail += chunk.toString()
         if (this.stderrTail.length > 64_000) this.stderrTail = this.stderrTail.slice(-64_000)
         for (const line of this.stderrTail.split(/\r?\n/)) {
@@ -106,7 +123,7 @@ class Backend {
           }
         }
       }
-      const onExit = (code, signal) => {
+      const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
         if (!settled) {
           settled = true
           clearTimeout(timer)
@@ -119,7 +136,7 @@ class Backend {
       child.stdout.on('data', onStdout)
       child.stderr.on('data', onStderr)
       child.on('exit', onExit)
-      child.on('error', (err) => {
+      child.on('error', (err: Error) => {
         if (!settled) {
           settled = true
           clearTimeout(timer)
@@ -134,7 +151,7 @@ class Backend {
        * injected `__DSH_BOOT__` graph (webserver up + frontend serving +
        * boot graph composed).
        */
-      async function probe(url) {
+      async function probe(url: string): Promise<void> {
         const deadline = Date.now() + probeTimeoutMs
         let lastErr = null
         while (Date.now() < deadline) {
@@ -154,17 +171,17 @@ class Backend {
   }
 
   /** The current base URL, when running. */
-  getUrl() {
+  getUrl(): string | null {
     return this.url
   }
 
   /** Whether the child process is still alive. */
-  isRunning() {
+  isRunning(): boolean {
     return !!this.child && this.child.exitCode === null && !this.child.killed
   }
 
   /** Ask the child to stop; SIGKILL after 5s. */
-  async stop() {
+  async stop(): Promise<void> {
     const child = this.child
     if (!child || child.exitCode !== null) return
     const exited = new Promise((resolve) => child.once('exit', resolve))

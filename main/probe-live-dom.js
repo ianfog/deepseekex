@@ -1,4 +1,4 @@
-'use strict'
+﻿'use strict'
 /**
  * Self-contained live-DOM probe (no CDP needed): starts a private dsh backend
  * on a random port with an isolated DSH_HOME, loads it in an offscreen
@@ -20,7 +20,7 @@ const kernelRoot =
   process.env.DSH_PROBE_KERNEL ||
   path.join(process.env.APPDATA, 'deepseekex', 'kernels', '0.1.0-rc.6')
 const probeHome = process.env.DSH_PROBE_HOME || path.join(os.tmpdir(), 'deepseekex-probe-home')
-const { Backend } = require('./backend.js')
+const { Backend } = require('./backend.ts')
 
 async function waitFor(fn, timeoutMs, stepMs = 300) {
   const deadline = Date.now() + timeoutMs

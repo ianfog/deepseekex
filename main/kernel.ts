@@ -12,12 +12,12 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const semver = require('semver')
-const { kernelsDir, activeFile, kernelDir, kernelDshDir, npmCacheDir } = require('./paths.js')
-const { mirrorRegistry } = require('./npm.js')
-const log = require('./log.js')
+const { kernelsDir, activeFile, kernelDir, kernelDshDir, npmCacheDir } = require('./paths.ts')
+const { mirrorRegistry } = require('./npm.ts')
+const log = require('./log.ts')
 
 /** Read the active kernel version (null when unset/corrupt). */
-function readActive(userData) {
+function readActive(userData: string): string | null {
   try {
     const v = JSON.parse(fs.readFileSync(activeFile(userData), 'utf8')).version
     return typeof v === 'string' ? v : null
@@ -27,7 +27,7 @@ function readActive(userData) {
 }
 
 /** Atomically set the active kernel version (tmp file + rename). */
-function setActive(userData, version) {
+function setActive(userData: string, version: string): void {
   const file = activeFile(userData)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const tmp = `${file}.tmp`
@@ -36,12 +36,12 @@ function setActive(userData, version) {
 }
 
 /** Absolute kernel install dir for a version. */
-function dirFor(userData, version) {
+function dirFor(userData: string, version: string): string {
   return kernelDir(userData, version)
 }
 
 /** The `@deepseek-ai/dsh` version actually installed in a kernel dir. */
-function installedVersion(kernelRoot) {
+function installedVersion(kernelRoot: string): string | null {
   try {
     return JSON.parse(fs.readFileSync(path.join(kernelDshDir(kernelRoot), 'package.json'), 'utf8')).version
   } catch {
@@ -50,18 +50,18 @@ function installedVersion(kernelRoot) {
 }
 
 /** Whether a kernel dir has a launchable dsh CLI. */
-function isUsable(kernelRoot) {
+function isUsable(kernelRoot: string): boolean {
   return fs.existsSync(path.join(kernelDshDir(kernelRoot), 'lib', 'bin.js'))
 }
 
 /** Semver-sorted list of installed kernel versions (ascending). */
-function listInstalled(userData) {
+function listInstalled(userData: string): string[] {
   const root = kernelsDir(userData)
   if (!fs.existsSync(root)) return []
   return fs
     .readdirSync(root, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && semver.valid(e.name))
-    .map((e) => e.name)
+    .filter((e: import('node:fs').Dirent) => e.isDirectory() && semver.valid(e.name))
+    .map((e: import('node:fs').Dirent) => e.name)
     .sort(semver.compare)
 }
 
@@ -69,7 +69,23 @@ function listInstalled(userData) {
  * Install a kernel version from the registry (primary, then mirror on failure).
  * @returns {Promise<string>} the kernel dir.
  */
-async function install(userData, version, { nodeBin, npmCli, electronAsNode, settings, onProgress = () => {} }) {
+async function install(
+  userData: string,
+  version: string,
+  {
+    nodeBin,
+    npmCli,
+    electronAsNode,
+    settings,
+    onProgress = () => {},
+  }: {
+    nodeBin: string
+    npmCli: string
+    electronAsNode: boolean
+    settings: { dshHome?: string; npmRegistry?: string; autoCheck?: boolean }
+    onProgress?: (msg: string) => void
+  },
+): Promise<string> {
   const dir = dirFor(userData, version)
   if (isUsable(dir)) return dir
   fs.rmSync(dir, { recursive: true, force: true })
@@ -86,19 +102,19 @@ async function install(userData, version, { nodeBin, npmCli, electronAsNode, set
     cwd: dir,
     cacheDir: npmCacheDir(userData),
     electronAsNode,
-    onOutput: (line) => {
+    onOutput: (line: string) => {
       log.info(`[npm ${version}] ${line}`)
       onProgress(`installing kernel ${version}: ${line}`)
     },
   }
   onProgress(`installing dsh kernel ${version} (npm install)`)
   try {
-    await require('./npm.js').runNpmInstall({ ...base, registry })
+    await require('./npm.ts').runNpmInstall({ ...base, registry })
   } catch (err) {
     if (registry !== mirrorRegistry().replace(/\/$/, '')) {
       onProgress('primary registry failed; retrying via npmmirror')
-      log.warn(`kernel install via ${registry} failed (${err.message}); retrying via mirror`)
-      await require('./npm.js').runNpmInstall({ ...base, registry: mirrorRegistry().replace(/\/$/, '') })
+      log.warn(`kernel install via ${registry} failed (${(err as Error).message}); retrying via mirror`)
+      await require('./npm.ts').runNpmInstall({ ...base, registry: mirrorRegistry().replace(/\/$/, '') })
     } else {
       throw err
     }
@@ -113,12 +129,12 @@ async function install(userData, version, { nodeBin, npmCli, electronAsNode, set
 }
 
 /** Remove a kernel version's directory. */
-function remove(userData, version) {
+function remove(userData: string, version: string): void {
   fs.rmSync(dirFor(userData, version), { recursive: true, force: true })
 }
 
 /** Delete old versions beyond `keep` (active always kept). */
-function cleanup(userData, keep = 3) {
+function cleanup(userData: string, keep: number = 3): void {
   const active = readActive(userData)
   const versions = listInstalled(userData).filter((v) => v !== active).sort(semver.rcompare)
   for (const v of versions.slice(keep - 1)) {
@@ -131,14 +147,31 @@ function cleanup(userData, keep = 3) {
  * Ensure an active, usable kernel exists; installs `latest` when needed.
  * @returns {Promise<string>} the active version.
  */
-async function ensureActive(userData, { latest, nodeBin, npmCli, electronAsNode, settings, onProgress }) {
+async function ensureActive(
+  userData: string,
+  {
+    latest,
+    nodeBin,
+    npmCli,
+    electronAsNode,
+    settings,
+    onProgress,
+  }: {
+    latest: string | null
+    nodeBin: string
+    npmCli: string
+    electronAsNode: boolean
+    settings: { dshHome?: string; npmRegistry?: string; autoCheck?: boolean }
+    onProgress?: (msg: string) => void
+  },
+): Promise<string> {
   const active = readActive(userData)
   if (active && isUsable(dirFor(userData, active))) return active
   if (!latest) throw new Error('no active kernel and no latest version to install')
   const dir = await install(userData, latest, { nodeBin, npmCli, electronAsNode, settings, onProgress })
   setActive(userData, installedVersion(dir) || latest)
   cleanup(userData, 3)
-  return readActive(userData)
+  return readActive(userData) as string
 }
 
 module.exports = {

@@ -10,13 +10,16 @@
 
 const semver = require('semver')
 const path = require('node:path')
-const { httpGetJson } = require('./net.js')
-const kernel = require('./kernel.js')
-const { Backend } = require('./backend.js')
-const log = require('./log.js')
+const { httpGetJson } = require('./net.ts')
+const kernel = require('./kernel.ts')
+const { Backend } = require('./backend.ts')
+const log = require('./log.ts')
+
+/** App settings shape, as read from `<userData>/settings.json`. */
+type Settings = { dshHome?: string; npmRegistry?: string; autoCheck?: boolean }
 
 /** npm registry `latest` dist-tag of the dsh package. */
-async function latestVersion(settings) {
+async function latestVersion(settings: Settings): Promise<string> {
   const registry = (settings.npmRegistry || 'https://registry.npmjs.org/').replace(/\/$/, '')
   const info = await httpGetJson(`${registry}/@deepseek-ai/dsh/latest`)
   if (typeof info.version !== 'string') throw new Error(`registry returned no version: ${JSON.stringify(info)}`)
@@ -24,12 +27,12 @@ async function latestVersion(settings) {
 }
 
 /** Latest upstream commit of the GitHub source (best-effort; null when offline). */
-async function githubSourceInfo() {
+async function githubSourceInfo(): Promise<{ sha: string; date: string | null } | null> {
   try {
     const j = await httpGetJson('https://api.github.com/repos/deepseek-ai/deepseek-harness/commits/master')
     return { sha: j.sha.slice(0, 7), date: j.commit?.committer?.date || null }
   } catch (err) {
-    log.warn(`github source info unavailable: ${err.message}`)
+    log.warn(`github source info unavailable: ${(err as Error).message}`)
     return null
   }
 }
@@ -40,13 +43,26 @@ async function githubSourceInfo() {
  *   fires at 0% (registry), 50% (upstream) and 100% (done).
  * @returns {Promise<{current: string, latest: string|null, updateAvailable: boolean, source: object|null}>}
  */
-async function check({ settings, current, onProgress = () => {} }) {
+async function check({
+  settings,
+  current,
+  onProgress = () => {},
+}: {
+  settings: Settings
+  current: string
+  onProgress?: (pct: number, label: string) => void
+}): Promise<{
+  current: string
+  latest: string | null
+  updateAvailable: boolean
+  source: { sha: string; date: string | null } | null
+}> {
   onProgress(0, 'QUERY REGISTRY')
   let latest = null
   try {
     latest = await latestVersion(settings)
   } catch (err) {
-    log.warn(`update check failed: ${err.message}`)
+    log.warn(`update check failed: ${(err as Error).message}`)
   }
   onProgress(50, 'FETCH UPSTREAM')
   const source = await githubSourceInfo()
@@ -63,7 +79,23 @@ async function check({ settings, current, onProgress = () => {} }) {
  * Install the newest kernel, verify it boots, and switch the active version.
  * @returns {Promise<{updated: boolean, version: string}>}
  */
-async function apply({ userData, settings, current, nodeBin, npmCli, electronAsNode, onProgress = () => {} }) {
+async function apply({
+  userData,
+  settings,
+  current,
+  nodeBin,
+  npmCli,
+  electronAsNode,
+  onProgress = () => {},
+}: {
+  userData: string
+  settings: Settings
+  current: string | null
+  nodeBin: string
+  npmCli: string | null
+  electronAsNode: boolean
+  onProgress?: (msg: string) => void
+}): Promise<{ updated: boolean; version: string }> {
   const latest = await latestVersion(settings)
   if (current && latest === current) return { updated: false, version: current }
 
