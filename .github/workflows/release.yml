@@ -15,9 +15,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            run: npm run dist:win
+            run: npm run dist:win -- --publish never
           - os: macos-latest
-            run: npm run dist:mac -- --x64 --arm64
+            run: npm run dist:mac -- --x64 --arm64 --publish never
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
