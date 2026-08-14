@@ -19,7 +19,7 @@
   },
   "include": [
     "main/**/*.ts",
-    "preload.ts",
+    "preload.js",
     "renderer/**/*.js",
     "renderer/**/*.d.ts"
   ]

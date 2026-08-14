@@ -17,3 +17,9 @@ build/*
 .idea/
 *.md~
 *~
+
+# 会话修复诊断产物（一次性，不入库）
+repair-session.cjs
+scan-session-log.cjs
+session-*.zstd
+session-fixed/

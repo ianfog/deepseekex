@@ -65,10 +65,12 @@ Deepseekex (Electron 壳 — 稳定层)
 
 - 前端无需单独打包：`dsh-web-app` 的依赖链自带 `dsh-web-frontend` 编译产物，后端自己 serve。
 - 无需捆绑 Node：用 `ELECTRON_RUN_AS_NODE=1` 让 Electron 自带的 Node（43.x → Node 24）直接跑内核。
-- **TypeScript，零构建**：主进程（`main/*.ts`）与 `preload.ts` 用 Node 24 原生 type stripping 直接运行
+- **TypeScript，零构建**：主进程（`main/*.ts`）用 Node 24 原生 type stripping 直接运行
   （无编译步骤）；`npm run types`（`tsc --noEmit`）做全量类型检查。CJS 风格保持
   （`require('./x.ts')` + `module.exports`），`tsconfig.json` 开 `erasableSyntaxOnly` 保证
-  只使用可擦除语法。renderer 是浏览器脚本，保留 `.js` + JSDoc `@ts-check`。
+  只使用可擦除语法。**例外**：`preload.js` 和 renderer 必须是 `.js` —— Electron 的
+  sandbox preload 在受限 V8 bundle 里运行，不支持 TS type stripping（打包后 `.ts` preload
+  会加载失败导致黑屏）；renderer 是浏览器脚本同理，两者用 JSDoc 标注类型。
 - 更新即"换内核"：下载安装新版 `@deepseek-ai/dsh`（npm 是上游 GitHub 源码的官方发布渠道），
   启动验证通过后原子切换 active 指针并重启后端；旧内核保留用于回滚。
 - 壳自更新：`main/shell-updater.ts` 用 electron-updater 检查 GitHub Releases 的 `latest.yml`

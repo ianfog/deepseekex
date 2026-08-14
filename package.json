@@ -1,7 +1,7 @@
 {
   "name": "deepseekex",
   "productName": "Deepseekex",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DeepSeek Harness desktop client — Electron shell with an updatable dsh kernel pulled from the upstream GitHub source via npm.",
   "main": "main/index.ts",
   "private": true,
@@ -37,7 +37,7 @@
       "!main/probe-*.js",
       "!main/verify-*.js",
       "!main/smoke.js",
-      "preload.ts",
+      "preload.js",
       "renderer/**/*",
       "package.json"
     ],

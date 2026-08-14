@@ -100,6 +100,7 @@ const boot = (() => {
   /** @type {{x:number,y:number,vx:number,vy:number,s:number,sp:number}[]} */
   let parts = []
   let raf = 0
+  let running = false
   let t = 0
   let phase = 0 // 0 boot · 1 kernel · 2 ready-ish · 3 fault
   let progress = 0 // 0..1
@@ -201,14 +202,22 @@ const boot = (() => {
     ctx.strokeStyle = 'rgba(255,250,0,0.10)'
     ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, h); ctx.stroke()
 
-    raf = requestAnimationFrame(frame)
+    if (running) raf = requestAnimationFrame(frame)
   }
 
   function start() {
     if (!canvas || !ctx) return
-    resize()
-    window.addEventListener('resize', resize)
-    if (reduce) {
+    // idempotent: resize/seed once per show, one resize listener, one loop
+    if (!running && !reduce) {
+      resize()
+      window.removeEventListener('resize', resize)
+      window.addEventListener('resize', resize)
+      running = true
+      raf = requestAnimationFrame(frame)
+    } else if (reduce) {
+      resize()
+      window.removeEventListener('resize', resize)
+      window.addEventListener('resize', resize)
       // static render: grid + one centered diamond
       ctx.clearRect(0, 0, w, h)
       ctx.strokeStyle = GRID
@@ -216,14 +225,14 @@ const boot = (() => {
       for (let x = 0; x < w; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke() }
       for (let y = 0; y < h; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke() }
       diamond(w / 2, h / 2, 40, 0.4)
-      return
     }
-    cancelAnimationFrame(raf)
-    raf = requestAnimationFrame(frame)
   }
 
   function stop() {
-    cancelAnimationFrame(raf)
+    if (running) {
+      cancelAnimationFrame(raf)
+      running = false
+    }
     window.removeEventListener('resize', resize)
   }
 

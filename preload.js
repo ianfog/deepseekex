@@ -2,6 +2,10 @@
 /**
  * Preload for the chrome renderer (the local shell page that hosts the dsh
  * webview and the update UI). Exposes a minimal, promise-based API surface.
+ *
+ * NOTE: this file must stay plain CommonJS `.js` — Electron's sandboxed
+ * preload runs in a restricted V8 bundle that does NOT support TypeScript
+ * type stripping, so a `.ts` preload fails to load in packaged builds.
  */
 
 const { contextBridge, ipcRenderer } = require('electron')
@@ -9,7 +13,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('deepseekex', {
   getState: () => ipcRenderer.invoke('desktop:get-state'),
   getSettings: () => ipcRenderer.invoke('desktop:get-settings'),
-  saveSettings: (patch: { dshHome?: string; npmRegistry?: string; autoCheck?: boolean }) => ipcRenderer.invoke('desktop:save-settings', patch),
+  saveSettings: (patch) => ipcRenderer.invoke('desktop:save-settings', patch),
   refreshBalance: () => ipcRenderer.invoke('desktop:refresh-balance'),
   shellUpdateCheck: () => ipcRenderer.invoke('desktop:shell-update-check'),
   shellUpdateApply: () => ipcRenderer.invoke('desktop:shell-update-apply'),
@@ -18,10 +22,10 @@ contextBridge.exposeInMainWorld('deepseekex', {
   applyUpdate: () => ipcRenderer.invoke('desktop:apply-update'),
   restartBackend: () => ipcRenderer.invoke('desktop:restart-backend'),
   retryBoot: () => ipcRenderer.invoke('desktop:retry-boot'),
-  onEvent: (cb: (payload: unknown) => void) => {
-    ipcRenderer.on('desktop:event', (_event: Electron.IpcRendererEvent, payload: unknown) => cb(payload))
+  onEvent: (cb) => {
+    ipcRenderer.on('desktop:event', (_event, payload) => cb(payload))
   },
-  onProgress: (cb: (payload: unknown) => void) => {
-    ipcRenderer.on('desktop:progress', (_event: Electron.IpcRendererEvent, payload: unknown) => cb(payload))
+  onProgress: (cb) => {
+    ipcRenderer.on('desktop:progress', (_event, payload) => cb(payload))
   },
 })
