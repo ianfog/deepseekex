@@ -58,6 +58,9 @@ const els = {
   logsClose: $('logsClose'),
   overlay: $('overlay'),
   overlayKicker: $('overlayKicker'),
+  bootCanvas: $('bootCanvas'),
+  bootPhase: $('bootPhase'),
+  bootScale: $('bootScale'),
   spinner: $('spinner'),
   overlayTitle: $('overlayTitle'),
   overlayMessage: $('overlayMessage'),
@@ -77,6 +80,175 @@ const els = {
 let state = null
 /** @type {string|null} */
 let loadedUrl = null
+
+/* ============================================================
+ * Boot scene: generative Endfield canvas (diamond particles,
+ * signal sweep, calibration grid). Runs only while the overlay is
+ * visible; pauses under prefers-reduced-motion. Pure Canvas 2D,
+ * no external assets.
+ * ============================================================ */
+const boot = (() => {
+  /** @type {HTMLCanvasElement|null} */
+  const canvasEl = els.bootCanvas
+  if (!canvasEl) return { start: () => {}, stop: () => {}, setPhase: () => {}, setProgress: () => {} }
+  /** @type {HTMLCanvasElement} */
+  const canvas = canvasEl
+  /** @type {CanvasRenderingContext2D|null} */
+  const ctx = canvas.getContext('2d')
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  /** @type {{x:number,y:number,vx:number,vy:number,s:number,sp:number}[]} */
+  let parts = []
+  let raf = 0
+  let t = 0
+  let phase = 0 // 0 boot · 1 kernel · 2 ready-ish · 3 fault
+  let progress = 0 // 0..1
+  let w = 0
+  let h = 0
+
+  const SIGNAL = '#fffa00'
+  const MUTED = 'rgba(136,136,136,'
+  const GRID = 'rgba(255,255,255,0.05)'
+
+  function resize() {
+    if (!ctx) return
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    w = canvas.clientWidth
+    h = canvas.clientHeight
+    canvas.width = Math.round(w * dpr)
+    canvas.height = Math.round(h * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    seed()
+  }
+
+  function seed() {
+    const n = Math.max(30, Math.min(110, Math.round((w * h) / 16000)))
+    parts = []
+    for (let i = 0; i < n; i++) {
+      parts.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.25,
+        vy: (Math.random() - 0.5) * 0.25,
+        s: 2 + Math.random() * 5,
+        sp: 0.4 + Math.random() * 0.6,
+      })
+    }
+  }
+
+  /** Draw one Endfield diamond at (x,y) with size s. */
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {number} s
+   * @param {number} alpha
+   */
+  function diamond(x, y, s, alpha) {
+    if (!ctx) return
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(Math.PI / 4)
+    ctx.strokeStyle = SIGNAL
+    ctx.globalAlpha = alpha
+    ctx.lineWidth = 1
+    ctx.strokeRect(-s / 2, -s / 2, s, s)
+    ctx.restore()
+  }
+
+  function frame() {
+    if (!ctx) return
+    t += 1
+    ctx.clearRect(0, 0, w, h)
+
+    // calibration grid
+    ctx.strokeStyle = GRID
+    ctx.lineWidth = 1
+    const step = 44
+    for (let x = (t * 0.1) % step; x < w; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
+    }
+    for (let y = (t * 0.1) % step; y < h; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+    }
+
+    // drifting diamond particles; converge toward center as progress rises
+    const cx = w / 2
+    const cy = h / 2
+    const converge = 0.02 + progress * 0.06
+    for (const p of parts) {
+      p.x += (cx - p.x) * converge * 0.01 + p.vx
+      p.y += (cy - p.y) * converge * 0.01 + p.vy
+      if (p.x < -20) p.x = w + 20; if (p.x > w + 20) p.x = -20
+      if (p.y < -20) p.y = h + 20; if (p.y > h + 20) p.y = -20
+      const a = 0.08 + Math.abs(Math.sin(t * 0.01 * p.sp)) * 0.25
+      diamond(p.x, p.y, p.s, phase === 3 ? 0.3 : a)
+    }
+
+    // central core diamond that brightens as boot completes
+    const core = 26 + progress * 60 + Math.sin(t * 0.03) * 4
+    diamond(cx, cy, core, 0.25 + progress * 0.5)
+
+    // signal sweep: a vertical scan line moving left→right
+    const sx = (t * 1.6) % (w + 240) - 120
+    const grad = ctx.createLinearGradient(sx - 90, 0, sx + 20, 0)
+    grad.addColorStop(0, 'rgba(255,250,0,0)')
+    grad.addColorStop(0.8, 'rgba(255,250,0,0.14)')
+    grad.addColorStop(1, 'rgba(255,250,0,0.5)')
+    ctx.fillStyle = grad
+    ctx.fillRect(sx - 90, 0, 110, h)
+
+    // faint center guide line
+    ctx.strokeStyle = 'rgba(255,250,0,0.10)'
+    ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, h); ctx.stroke()
+
+    raf = requestAnimationFrame(frame)
+  }
+
+  function start() {
+    if (!canvas || !ctx) return
+    resize()
+    window.addEventListener('resize', resize)
+    if (reduce) {
+      // static render: grid + one centered diamond
+      ctx.clearRect(0, 0, w, h)
+      ctx.strokeStyle = GRID
+      const step = 44
+      for (let x = 0; x < w; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke() }
+      for (let y = 0; y < h; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke() }
+      diamond(w / 2, h / 2, 40, 0.4)
+      return
+    }
+    cancelAnimationFrame(raf)
+    raf = requestAnimationFrame(frame)
+  }
+
+  function stop() {
+    cancelAnimationFrame(raf)
+    window.removeEventListener('resize', resize)
+  }
+
+  /** @param {number} p 0..1 */
+  function setProgress(p) {
+    progress = Math.max(0, Math.min(1, p))
+    // light up the calibration ticks proportionally
+    /** @type {Element[]} */
+    const ticks = els.bootScale ? Array.from(els.bootScale.querySelectorAll('i')) : []
+    ticks.forEach((tick, i) => {
+      tick.classList.toggle('on', i / ticks.length <= progress)
+      tick.classList.toggle('fault', phase === 3)
+    })
+  }
+
+  /** @param {number|string} ph - 0/1/2/3 or 'fault' */
+  function setPhase(ph) {
+    phase = ph === 'fault' ? 3 : Number(ph) || 0
+    if (els.bootPhase) {
+      els.bootPhase.textContent = phase === 3 ? '!!' : String(phase + 1).padStart(2, '0')
+    }
+  }
+
+  return { start, stop, setPhase, setProgress }
+})()
 
 /** @param {string} phase */
 function setDot(phase) {
@@ -113,6 +285,7 @@ function render(s) {
   // The dsh UI iframe: assign src once per backend URL.
   if (s.phase === 'ready' || s.phase === 'updating') {
     els.overlay.hidden = true
+    boot.stop()
     if (s.phase === 'ready' && s.backendUrl) {
       if (loadedUrl !== s.backendUrl) {
         loadedUrl = s.backendUrl
@@ -132,6 +305,12 @@ function render(s) {
     els.overlayMessage.textContent = s.message || ''
     els.retryBtn.hidden = s.phase !== 'error'
     els.spinner.style.display = s.phase === 'updating' || s.phase === 'starting' ? '' : 'none'
+    // drive the generative boot scene
+    boot.setPhase(s.phase === 'error' ? 'fault' : s.phase === 'updating' ? 1 : 0)
+    boot.start()
+    // progress heuristic: boot stages walk the calibration scale
+    const pct = s.phase === 'error' ? 0 : s.phase === 'updating' ? 0.35 : 0.12
+    boot.setProgress(pct)
   }
 
   // Update button: shell self-update takes priority over kernel update.

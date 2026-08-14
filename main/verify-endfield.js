@@ -1,4 +1,4 @@
-﻿'use strict'
+'use strict'
 /**
  * Endfield UI verification harness. Starts a private dsh backend, loads the
  * shell chrome with a stubbed preload (so the chrome renders in the "ready"
@@ -117,6 +117,37 @@ async function main() {
     };
   })()`)
   console.log('SHELL:', JSON.stringify(shellChecks, null, 1))
+
+  // boot scene: force the overlay into 'starting' state and inspect the
+  // generative canvas + phase numeral + calibration ticks
+  const bootCheck = await chrome.webContents.executeJavaScript(`(async () => {
+    window.deepseekex.__setState({ phase:'starting', kernelVersion:null,
+      latestVersion:null, updateAvailable:false, backendUrl:null,
+      source:null, message:'preparing npm CLI…', logsTail:[], themePreference:'dark',
+      balance:null, shellUpdate:null });
+    await new Promise(r => setTimeout(r, 600));
+    const cv = document.getElementById('bootCanvas');
+    return {
+      overlayShown: !document.getElementById('overlay').hidden,
+      canvasPresent: !!cv,
+      canvasW: cv ? cv.width : 0,
+      canvasH: cv ? cv.height : 0,
+      phaseText: document.getElementById('bootPhase').textContent,
+      kicker: document.getElementById('overlayKicker').textContent,
+      title: document.getElementById('overlayTitle').textContent,
+      ticksLit: document.querySelectorAll('.overlay-scale i.on').length,
+      ticksTotal: document.querySelectorAll('.overlay-scale i').length,
+      canvasPixelNonEmpty: (() => {
+        if (!cv) return false;
+        const c = cv.getContext('2d');
+        const d = c.getImageData(0, 0, Math.min(80, cv.width), Math.min(80, cv.height)).data;
+        let nz = 0;
+        for (let i = 3; i < d.length; i += 4) if (d[i] > 0) nz++;
+        return nz > 0;
+      })(),
+    };
+  })()`)
+  console.log('BOOT SCENE:', JSON.stringify(bootCheck, null, 1))
 
   // exercise the progress bar: show via the stubbed API, then read it back
   const progressCheck = await chrome.webContents.executeJavaScript(`(async () => {
