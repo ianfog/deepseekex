@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-ark-theme="endfield" data-ark-depth="complex">
+<html lang="zh-CN" data-ark-theme="endfield" data-ark-depth="complex" data-shell-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self'" />
@@ -40,6 +40,7 @@
         <span class="progress-label" id="updateProgressLabel">CHECK 0%</span>
       </div>
       <button id="updateBtn" class="btn" hidden>检查更新</button>
+      <button id="opsBtn" class="btn ghost" aria-pressed="false" title="SYS/OPS 运营侧栏"><span class="idx">04</span><span>OPS</span></button>
       <button id="workspaceBtn" class="btn ghost"><span class="idx">01</span><span>工作区</span></button>
       <button id="settingsBtn" class="btn ghost"><span class="idx">02</span><span>设置</span></button>
       <button id="logsBtn" class="btn ghost"><span class="idx">03</span><span>日志</span></button>
@@ -63,6 +64,38 @@
          always follows the CSS box (no embedder/guest sync issues) and the
          chrome DOM (menus/dialogs/overlays) stacks above it naturally. -->
     <iframe id="surface" allow="clipboard-read; clipboard-write; popups"></iframe>
+
+    <!-- SYS/OPS station: docked right sidebar with the kernel instrument
+         gauge. The stage is a flex row; the iframe shrinks when this panel is
+         open, so the dsh UI is never covered. -->
+    <aside id="sidePanel">
+      <div class="side-inner">
+        <div class="side-head">
+          <span class="side-head-code">SYS/OPS&nbsp;//&nbsp;STATION</span>
+          <button id="sideClose" class="btn ghost" aria-label="收起侧栏">»</button>
+        </div>
+
+        <!-- kernel instrument gauge: big uptime readout on top -->
+        <section class="side-block side-gauge">
+          <div class="side-kicker">KERNEL // STATUS</div>
+          <div class="gauge">
+            <div class="gauge-head">
+              <span class="gauge-label">运行时长</span>
+              <span class="dot ok" id="gaugeDot" aria-hidden="true"></span>
+            </div>
+            <div class="gauge-value" id="sideUptime">--</div>
+            <div class="gauge-strip" id="gaugeStrip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <dl class="side-kv">
+            <div><dt>版本</dt><dd id="sideKernel">-</dd></div>
+            <div><dt>节点</dt><dd id="sideNode">-</dd></div>
+            <div><dt>运行时</dt><dd id="sideRuntime">-</dd></div>
+            <div><dt>后端地址</dt><dd id="sideUrl">-</dd></div>
+          </dl>
+        </section>
+      </div>
+    </aside>
+
     <div id="overlay" hidden>
       <!-- generative Endfield boot scene: diamond particles, signal sweep,
            calibration grid — original canvas art, no external assets -->

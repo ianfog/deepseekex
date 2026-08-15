@@ -15,6 +15,7 @@
 - 🔄 **内核热更新** —— 从 npm 官方渠道（上游 GitHub 源码的发布产物）下载新内核，验证通过后原子切换并重启，一键升级；旧内核保留用于回滚，壳层永不失效。
 - 🛡️ **崩溃自愈** —— 内核进程异常退出自动重启，连续崩溃自动回滚到上一个可用版本。
 - 📊 **余额遥测** —— 顶栏 `SYS/BALANCE` 实时展示 DeepSeek 平台余额，低余额危险红提示。
+- 📈 **SYS/OPS 运营侧栏** —— 右侧可停靠/折叠面板：终末地风格内核仪表盘（大号运行时长、呼吸式校准刻度、状态灯 + 版本 / Node 运行时 / 后端地址）；**壳层配色跟随 设置 → 外观 即时切换浅色/深色**（监听 `settings.yaml`，`system` 模式下跟随系统，启动阶段固定炭墨黑）；折叠状态跨启动记忆。
 - 🔑 **密钥安全** —— API Key 仅主进程从本地凭据文件读取，不进日志、不进渲染层。
 
 ## 截图
@@ -40,12 +41,15 @@
   `$DSH_HOME/settings.yaml` 的 `ui-theme.preference`，即时生效；壳层读取同一偏好决定是否强制
   深色补丁（非显式浅色即 Endfield 炭墨壳）。右上角壳设置不含配色项，避免双入口。
 - **动效**：顶栏信号轨黄色擦入、状态块呼吸、菱形旋转加载；`prefers-reduced-motion` 下全部关闭。
-- **内核 UI 补丁层**（`main/ui-patch.js`）：dsh 界面本身也按 Endfield 语言重定义设计令牌——
+- **内核 UI 补丁层**（`main/ui-patch.ts`）：dsh 界面本身也按 Endfield 语言重定义设计令牌——
   覆盖全部 ~90 个 `--dsw-*` 别名（底色分层、发丝线边框、文字、品牌、按钮、交互态、成功/警告/
   错误状态、侧栏、气泡、菜单、输入、markdown、滚动条、字体），深浅两套色板随主题属性热切换；
   组件细节（荧光黄选区、方形滚动条、输入框荧光黄焦点、新建会话切角 CTA、侧栏发丝线、触发控件
   信号左轨、工作区悬停信号轨、方形面板/气泡）按真实 CSS-module 类名后缀命中（如 `*_newSession`、
-  `*_composerSeat`、`*_sidebarCol`）。补丁在 iframe 每次加载完成后由壳自动注入
+  `*_composerSeat`、`*_sidebarCol`）。**校准网格**：`body::before` 固定网格层（44px，4.5%
+  透明度，`pointer-events:none`，z-index 9990，`clip-path` 裁剪到左侧 280px 工作区列），
+  启动画面的网格纹理只出现在左侧 sidebar，中间对话区保持干净；纯 CSS 零开销。
+  补丁在 iframe 每次加载完成后由壳自动注入
   （`did-frame-finish-load`），**不修改内核文件，内核更新后自动重放，永不失效**。扩展方式：
   往 `buildUiPatchCss()` 里加令牌/规则即可。验证：`npx electron main/verify-endfield.js`
   起私有内核并截图/读计算样式（`main/probe-live-dom.js` 可单独导出 DOM 类名清单）。

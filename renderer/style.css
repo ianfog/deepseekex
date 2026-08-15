@@ -17,7 +17,7 @@
    ============================================================ */
 
 :root {
-  /* ---- Endfield token set ---- */
+  /* ---- Endfield token set (dark = carbon ink default) ---- */
   --ef-ink: #191919;          /* deepest surface */
   --ef-ink-raised: #232323;   /* raised panel */
   --ef-ink-hover: #2e2e2e;    /* hover fill */
@@ -31,6 +31,9 @@
   --ef-grid: rgba(255, 255, 255, 0.05);
   --ef-grid-inverse: rgba(255, 255, 255, 0.14);
   --ef-hairline: rgba(255, 255, 255, 0.08);
+  /* Fixed ink for text ON signal fills (selection, primary CTA): stays dark
+     in both themes so yellow-fill controls keep ink labels. */
+  --ef-ink-solid: #191919;
   --ef-radius: 2px;
   --ef-fast: 240ms cubic-bezier(0.22, 0.8, 0.2, 1);
   --ef-reveal: 650ms cubic-bezier(0.22, 0.8, 0.2, 1);
@@ -38,6 +41,26 @@
   --ef-font-display: "Arial Narrow", "Roboto Condensed", "DIN Condensed", "Segoe UI", sans-serif;
   --ef-font-tech: "Space Grotesk", "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --ef-font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+/* ---- light palette: the chrome follows 设置 → 外观 (ui-theme.preference).
+   The renderer sets data-shell-theme on <html> from state.themePreference,
+   resolving 'system' through the OS color scheme. Signal yellow deepens so
+   text accents stay readable on light surfaces. */
+html[data-shell-theme="light"] {
+  --ef-ink: #f4f4f1;          /* light surface */
+  --ef-ink-raised: #ebebe6;   /* raised panel */
+  --ef-ink-hover: #e0e0da;    /* hover fill */
+  --ef-ink-active: #d0d0c8;   /* pressed fill */
+  --ef-paper: #1c1c1a;        /* primary text */
+  --ef-paper-dim: #45453f;    /* secondary text */
+  --ef-muted: #7c7c74;        /* tertiary text */
+  --ef-signal: #d9d200;       /* deeper Endfield yellow for light bg */
+  --ef-verified: #00a878;     /* verified green (deeper for light) */
+  --ef-danger: #c23a3a;       /* fault red */
+  --ef-grid: rgba(0, 0, 0, 0.055);
+  --ef-grid-inverse: rgba(0, 0, 0, 0.15);
+  --ef-hairline: rgba(0, 0, 0, 0.14);
 }
 
 * { box-sizing: border-box; }
@@ -54,7 +77,7 @@ html, body {
 
 body { display: flex; flex-direction: column; }
 
-::selection { background: var(--ef-signal); color: var(--ef-ink); }
+::selection { background: var(--ef-signal); color: var(--ef-ink-solid); }
 
 /* ---- top bar: Endfield utility dock ---- */
 #topbar {
@@ -303,7 +326,7 @@ body { display: flex; flex-direction: column; }
 .btn.primary,
 .btn.warn {
   background: var(--ef-signal);
-  color: var(--ef-ink);
+  color: var(--ef-ink-solid);
   border-color: var(--ef-signal);
   font-weight: 800;
   clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
@@ -392,7 +415,17 @@ body { display: flex; flex-direction: column; }
 }
 
 /* ---- stage ---- */
-#stage { flex: 1; position: relative; min-height: 0; }
+/* The stage is a flex row: the dsh iframe shrinks when the docked OPS
+   sidebar is open, so the kernel UI is never covered (unlike the floating
+   log drawer). */
+#stage {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
 /* corner registration brackets: Endfield frame language */
 .corner {
   position: absolute;
@@ -409,21 +442,202 @@ body { display: flex; flex-direction: column; }
 
 /* The dsh UI iframe fills the stage; invisible until the backend is ready. */
 iframe#surface {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
   border: none;
   display: block;
   visibility: hidden;
 }
 iframe#surface.visible { visibility: visible; }
 
-/* ---- boot/update/error overlay: generative Endfield boot scene ---- */
+/* ---- SYS/OPS station: docked right sidebar ---- */
+#sidePanel {
+  flex: none;
+  width: 300px;
+  background: var(--ef-ink);
+  border-left: 1px solid var(--ef-hairline);
+  overflow: hidden;
+  display: flex;
+  position: relative;
+  transition: width var(--ef-fast), border-color var(--ef-fast);
+}
+#sidePanel[hidden] { display: none; }
+/* signal rail on the docking edge (hidden together with the panel) */
+#sidePanel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--ef-signal);
+  z-index: 2;
+  pointer-events: none;
+}
+/* collapsed: width animates to 0, content clipped by overflow:hidden */
+#stage.side-collapsed #sidePanel { width: 0; border-left-color: transparent; }
+.side-inner {
+  flex: none;
+  width: 300px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.side-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ef-hairline);
+  background: var(--ef-ink-raised);
+  flex: none;
+}
+.side-head-code {
+  font: 700 9px/1 var(--ef-font-tech);
+  letter-spacing: 0.2em;
+  color: var(--ef-paper-dim);
+}
+.side-head .btn.ghost { min-height: 22px; padding: 0 8px; }
+.side-block {
+  padding: 12px;
+  border-bottom: 1px solid var(--ef-hairline);
+  flex: none;
+}
+.side-kicker {
+  font: 700 8px/1 var(--ef-font-tech);
+  letter-spacing: 0.22em;
+  color: var(--ef-muted);
+  margin-bottom: 10px;
+}
+
+/* ---- kernel instrument gauge: big uptime readout ---- */
+.side-gauge .gauge {
+  position: relative;
+  padding: 12px;
+  margin-bottom: 12px;
+  background:
+    linear-gradient(var(--ef-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ef-grid) 1px, transparent 1px),
+    var(--ef-ink-raised);
+  background-size: 24px 24px, 24px 24px, auto;
+  border: 1px solid var(--ef-hairline);
+}
+/* corner registration brackets on the gauge panel */
+.side-gauge .gauge::before,
+.side-gauge .gauge::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.side-gauge .gauge::before {
+  left: -1px;
+  top: -1px;
+  border-left: 1px solid var(--ef-signal);
+  border-top: 1px solid var(--ef-signal);
+}
+.side-gauge .gauge::after {
+  right: -1px;
+  bottom: -1px;
+  border-right: 1px solid var(--ef-signal);
+  border-bottom: 1px solid var(--ef-signal);
+}
+.gauge-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.gauge-label {
+  font: 700 9px/1 var(--ef-font-tech);
+  letter-spacing: 0.22em;
+  color: var(--ef-muted);
+}
+.gauge-value {
+  font: 800 34px/1 var(--ef-font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--ef-paper);
+  text-shadow: 0 0 14px rgba(255, 250, 0, 0.18);
+  margin-bottom: 12px;
+}
+.gauge-strip {
+  display: flex;
+  gap: 5px;
+  align-items: flex-end;
+  height: 14px;
+}
+.gauge-strip i {
+  flex: 1;
+  background: var(--ef-ink-active);
+  opacity: 0.5;
+  transition: background 240ms cubic-bezier(0.22, 0.8, 0.2, 1);
+}
+.gauge-strip i:nth-child(odd) { height: 8px; }
+.gauge-strip i:nth-child(even) { height: 14px; }
+.gauge-strip i.on { background: var(--ef-signal); opacity: 0.9; }
+
+/* kernel status key/value list */
+.side-kv { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.side-kv > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px dashed var(--ef-hairline);
+}
+.side-kv dt {
+  font: 700 9px/1 var(--ef-font-tech);
+  letter-spacing: 0.14em;
+  color: var(--ef-muted);
+  flex: none;
+}
+.side-kv dd {
+  margin: 0;
+  font: 500 11px/1.3 var(--ef-font-mono);
+  color: var(--ef-paper-dim);
+  text-align: right;
+  word-break: break-all;
+  min-width: 0;
+}
+
+/* pressed state for the OPS toggle (mirrors .ghost:hover) */
+.btn.ghost[aria-pressed="true"] {
+  background: var(--ef-ink-hover);
+  box-shadow: inset 3px 0 0 var(--ef-signal);
+}
+
+/* ---- boot/update/error overlay: generative Endfield boot scene ----
+   Always the carbon-ink boot, regardless of the shell theme: the launch
+   sequence is a deliberately dark cinematic moment, so the palette is pinned
+   locally (all descendants resolve these values). */
 #overlay {
+  --ef-ink: #191919;
+  --ef-ink-raised: #232323;
+  --ef-ink-hover: #2e2e2e;
+  --ef-ink-active: #3a3a3a;
+  --ef-paper: #f2f2f0;
+  --ef-paper-dim: #c9c9c4;
+  --ef-muted: #888888;
+  --ef-signal: #fffa00;
+  --ef-verified: #00ffa2;
+  --ef-danger: #d64545;
+  --ef-grid: rgba(255, 255, 255, 0.05);
+  --ef-grid-inverse: rgba(255, 255, 255, 0.14);
+  --ef-hairline: rgba(255, 255, 255, 0.08);
   position: absolute;
   inset: 0;
   background: var(--ef-ink);
+  /* inherited text color stays paper in both themes (title etc. have no
+     explicit color of their own) */
+  color: var(--ef-paper);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -676,5 +890,5 @@ dialog input[type="checkbox"] {
 
 @media (prefers-reduced-motion: reduce) {
   .btn, .dot, .spinner, #topbar::after, .overlay-card,
-  .overlay-scale i { animation: none; transition: none; }
+  .overlay-scale i, #sidePanel { animation: none; transition: none; }
 }

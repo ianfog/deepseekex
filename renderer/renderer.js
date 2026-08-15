@@ -17,7 +17,10 @@
  *   logsTail: string[],
  *   themePreference: string,
  *   balance: ({ok:true, total:number, currency:string, isAvailable:boolean, low:boolean, toppedUp:number, granted:number}|{ok:false, reason?:string, message?:string})|null,
- *   shellUpdate: {available:boolean, version:string|null, status?:string, progress?:number}|null
+ *   shellUpdate: {available:boolean, version:string|null, status?:string, progress?:number}|null,
+ *   nodeRuntime?: string,
+ *   nodeVersion?: string,
+ *   backendStartedAt?: number|null
  * }} AppState */
 
 /** @typedef {{
@@ -48,6 +51,16 @@ const els = {
   phaseChip: $('phaseChip'),
   balanceCell: $('balanceCell'),
   balanceChip: $('balanceChip'),
+  opsBtn: $('opsBtn'),
+  sidePanel: $('sidePanel'),
+  sideClose: $('sideClose'),
+  gaugeDot: $('gaugeDot'),
+  gaugeStrip: $('gaugeStrip'),
+  sideKernel: $('sideKernel'),
+  sideNode: $('sideNode'),
+  sideRuntime: $('sideRuntime'),
+  sideUrl: $('sideUrl'),
+  sideUptime: $('sideUptime'),
   updateBtn: $('updateBtn'),
   updateProgress: $('updateProgress'),
   updateProgressFill: $('updateProgressFill'),
@@ -267,6 +280,7 @@ function setDot(phase) {
 /** @param {AppState} s */
 function render(s) {
   state = s
+  applyShellTheme()
   setDot(s.phase)
 
   els.kernelChip.textContent = s.kernelVersion || '-'
@@ -357,6 +371,21 @@ function render(s) {
     els.updateBtn.hidden = true
   }
 
+  // OPS sidebar: visible only while the kernel is ready; the dsh iframe
+  // shrinks (dock), so the panel never covers the kernel UI.
+  const ready = s.phase === 'ready'
+  els.sidePanel.hidden = !ready
+  if (ready) {
+    els.sideKernel.textContent = s.kernelVersion || '-'
+    els.sideNode.textContent = s.nodeVersion || '-'
+    els.sideRuntime.textContent = s.nodeRuntime === 'system-node' ? 'SYSTEM NODE' : 'ELECTRON-AS-NODE'
+    els.sideUrl.textContent = s.backendUrl || '-'
+    els.sideUptime.textContent = s.backendStartedAt ? formatUptime((Date.now() - s.backendStartedAt) / 1000) : '--'
+    // status lamp + gauge strip track the kernel state
+    els.gaugeDot.className = 'dot ' + (s.phase === 'ready' ? 'ok' : 'err')
+    updateGaugeStrip(s.backendStartedAt ? (Date.now() - s.backendStartedAt) / 1000 : 0)
+  }
+
   els.logBody.textContent = (s.logsTail || []).join('\n')
   els.logBody.scrollTop = els.logBody.scrollHeight
 }
@@ -444,6 +473,88 @@ els.balanceCell.addEventListener('click', async () => {
     els.balanceChip.className = 'cell-value fault'
   }
 })
+
+/* ============================================================
+ * SYS/OPS station: kernel instrument gauge
+ * ============================================================ */
+
+/** @param {number} sec */
+function formatUptime(sec) {
+  const s = Math.max(0, Math.floor(sec))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const r = s % 60
+  /** @param {number} n */
+  const pad = (n) => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(r)}` : `${m}:${pad(r)}`
+}
+
+/** Light up the gauge strip ticks as the kernel runs: one tick immediately,
+ *  one more every 30s, then wrap so the strip keeps breathing forever.
+ *  @param {number} sec - uptime in seconds. */
+function updateGaugeStrip(sec) {
+  if (!els.gaugeStrip) return
+  const ticks = Array.from(els.gaugeStrip.children)
+  const n = ticks.length
+  if (n === 0) return
+  const lit = 1 + (Math.floor(sec / 30) % n)
+  ticks.forEach((tick, i) => {
+    tick.classList.toggle('on', i < lit)
+  })
+}
+
+// Kernel uptime ticker (1s while the panel is visible and ready).
+setInterval(() => {
+  if (!state || state.phase !== 'ready' || els.sidePanel.hidden || !state.backendStartedAt) return
+  const sec = (Date.now() - state.backendStartedAt) / 1000
+  els.sideUptime.textContent = formatUptime(sec)
+  updateGaugeStrip(sec)
+}, 1000)
+
+/* ---- chrome theme: follows the dsh UI's 设置 → 外观 preference ---- */
+/** @param {string|undefined} pref - 'light' | 'dark' | 'system' */
+function resolveShellTheme(pref) {
+  if (pref === 'light' || pref === 'dark') return pref
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+/** Apply the resolved theme to the chrome token set (light/dark palettes).
+ *  The boot/update/error overlay is always carbon-ink, so the whole chrome is
+ *  pinned dark while it is visible (no white flash on light systems); once
+ *  ready, the chrome follows the 设置 → 外观 preference. */
+function applyShellTheme() {
+  const t = state && state.phase === 'ready' ? resolveShellTheme(state.themePreference) : 'dark'
+  document.documentElement.dataset.shellTheme = t
+}
+// Follow OS color scheme changes while the preference is 'system'.
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+  if (!state || state.themePreference === 'system') applyShellTheme()
+})
+
+// Collapse/expand: persist across launches, mirror state onto the OPS toggle.
+const SIDE_KEY = 'deepseekex.ops.collapsed'
+/** @param {boolean} collapsed */
+function applySideCollapsed(collapsed) {
+  const stage = $('stage')
+  stage.classList.toggle('side-collapsed', collapsed)
+  els.opsBtn.setAttribute('aria-pressed', String(!collapsed))
+  try {
+    localStorage.setItem(SIDE_KEY, collapsed ? '1' : '0')
+  } catch {
+    /* storage unavailable — collapse just won't persist */
+  }
+}
+els.opsBtn.addEventListener('click', () => {
+  applySideCollapsed(!$('stage').classList.contains('side-collapsed'))
+})
+els.sideClose.addEventListener('click', () => applySideCollapsed(true))
+// Default to collapsed on first run; remember the user's choice afterwards
+// ('1' = collapsed, '0' = expanded).
+try {
+  const stored = localStorage.getItem(SIDE_KEY)
+  applySideCollapsed(stored === null ? true : stored === '1')
+} catch {
+  applySideCollapsed(true)
+}
 
 els.retryBtn.addEventListener('click', () => api.retryBoot())
 

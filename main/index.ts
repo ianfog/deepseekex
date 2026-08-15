@@ -6,7 +6,7 @@
  * @module deepseekex/main
  */
 
-const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen } = require('electron')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -27,7 +27,7 @@ const uiPatch = require('./ui-patch.ts')
  * load only under plain-Node ABIs — under Electron-as-Node they crash or fail
  * to load. Falls back to Electron-as-Node so the packaged app still works
  * without a system Node.
- * @returns {Promise<{ nodeBin: string, electronAsNode: boolean }>}
+ * @returns {Promise<{ nodeBin: string, electronAsNode: boolean, nodeVersion: string }>}
  */
 async function resolveNodeBin() {
   const candidates = []
@@ -45,14 +45,14 @@ async function resolveNodeBin() {
       const v = semver.valid(version)
       if (v && (semver.gte(v, '22.19.0') || semver.major(v) >= 24)) {
         log.info(`backend runtime: ${candidate} (node ${v})`)
-        return { nodeBin: candidate, electronAsNode: false }
+        return { nodeBin: candidate, electronAsNode: false, nodeVersion: v }
       }
     } catch {
       /* candidate unavailable; try the next */
     }
   }
   log.info('backend runtime: Electron-as-Node (no usable system Node found)')
-  return { nodeBin: process.execPath, electronAsNode: true }
+  return { nodeBin: process.execPath, electronAsNode: true, nodeVersion: process.versions.node }
 }
 
 let userData = ''
@@ -106,6 +106,9 @@ const state: {
   themePreference: string
   balance: unknown
   shellUpdate: ShellUpdateState | null
+  nodeRuntime: string
+  nodeVersion: string
+  backendStartedAt: number | null
 } = {
   phase: 'starting', // starting | ready | updating | error | quitting
   kernelVersion: null,
@@ -119,6 +122,9 @@ const state: {
   themePreference: 'system', // 'light' | 'dark' | 'system' (dsh UI's own setting)
   balance: null, // DeepSeek platform balance telemetry ({ok,...} | null)
   shellUpdate: null, // shell self-update telemetry ({available,version,progress,...} | null)
+  nodeRuntime: 'electron-as-node', // 'system-node' | 'electron-as-node' (backend runtime)
+  nodeVersion: process.versions.node,
+  backendStartedAt: null, // epoch ms when the current backend was started
 }
 
 /** Structural type of the shell updater object (CJS exports can't be
@@ -202,6 +208,8 @@ async function boot() {
     const runtime = await resolveNodeBin()
     nodeBin = runtime.nodeBin
     electronAsNode = runtime.electronAsNode
+    state.nodeRuntime = runtime.electronAsNode ? 'electron-as-node' : 'system-node'
+    state.nodeVersion = runtime.nodeVersion
 
     state.message = 'preparing npm CLI…'
     broadcast()
@@ -235,6 +243,7 @@ async function boot() {
     state.phase = 'ready'
     state.message = 'ready'
     refreshThemePreference()
+    armThemeWatcher()
     broadcast()
 
     // Platform balance telemetry: silent, non-blocking, refreshed on demand.
@@ -278,6 +287,8 @@ async function startBackend() {
   })
   exitCount = 0
   state.backendUrl = url
+  state.backendStartedAt = Date.now()
+  armThemeWatcher()
   broadcast()
 }
 
@@ -324,14 +335,15 @@ async function handleBackendExit(code: number | null, signal: string | null) {
 
 function createWindow() {
   // Fit the primary display's work area so the window never opens clipped or
-  // squeezed on small/scaled screens; then maximize to fill the screen.
+  // squeezed on small/scaled screens; then maximize to fill the screen. The
+  // default width is generous so the docked OPS sidebar has room to expand.
   const work = screen.getPrimaryDisplay().workAreaSize
-  const width = Math.min(1320, Math.max(940, work.width - 48))
-  const height = Math.min(860, Math.max(620, work.height - 48))
+  const width = Math.min(1440, Math.max(1120, work.width - 32))
+  const height = Math.min(880, Math.max(640, work.height - 48))
   win = new BrowserWindow({
     width,
     height,
-    minWidth: 940,
+    minWidth: 960,
     minHeight: 620,
     title: 'Deepseekex',
     show: false,
@@ -425,6 +437,69 @@ function refreshThemePreference() {
   if (state.themePreference !== pref) {
     state.themePreference = pref
     broadcast()
+  }
+  applyTitleBarOverlay()
+}
+
+/** Whether the shell should use the dark palette (resolves 'system' through
+ *  the OS color scheme via nativeTheme). */
+function resolveShellDark(): boolean {
+  const pref = state.themePreference
+  if (pref === 'light') return false
+  if (pref === 'dark') return true
+  return nativeTheme.shouldUseDarkColors
+}
+
+/**
+ * Repaint the Windows titleBarOverlay window controls (min/max/close) to
+ * match the shell theme. The overlay is painted by the OS over the frameless
+ * chrome, so it must be re-colored whenever the theme preference changes.
+ * While the boot/update/error overlay is visible the chrome is carbon-ink, so
+ * the window controls stay dark too (no white flash on light systems).
+ */
+function applyTitleBarOverlay() {
+  if (process.platform !== 'win32' || !win || win.isDestroyed()) return
+  if (state.phase !== 'ready') return
+  try {
+    const dark = resolveShellDark()
+    win.setTitleBarOverlay({
+      color: dark ? '#191919' : '#f4f4f1',
+      symbolColor: dark ? '#f2f2f0' : '#1c1c1a',
+      height: 52,
+    })
+  } catch (err) {
+    log.warn(`titleBarOverlay update failed: ${(err as Error).message}`)
+  }
+}
+
+/** Active watcher on the dsh home directory for `settings.yaml` writes. */
+let themeWatcher: import('node:fs').FSWatcher | null = null
+
+/**
+ * Watch the dsh home directory so the chrome theme follows the in-app
+ * 设置 → 外观 change immediately (the dsh UI hot-reloads the same document).
+ * Debounced; re-armed whenever the backend (re)starts in case dshHome moved.
+ */
+function armThemeWatcher() {
+  try {
+    if (themeWatcher) {
+      themeWatcher.close()
+      themeWatcher = null
+    }
+    const dir = dshHomeDir()
+    if (!fs.existsSync(dir)) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const watcher = fs.watch(dir, (_event: string, filename: string | null) => {
+      if (filename !== 'settings.yaml') return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => refreshThemePreference(), 250)
+    })
+    watcher.on('error', () => {
+      /* watcher is best-effort; theme falls back to boot-time value */
+    })
+    themeWatcher = watcher
+  } catch (err) {
+    log.warn(`theme watcher arm failed: ${(err as Error).message}`)
   }
 }
 
@@ -663,6 +738,10 @@ if (!gotLock) {
     fs.mkdirSync(userData, { recursive: true })
     log.init(userData)
     createWindow()
+    // Title-bar window controls follow the OS color scheme in 'system' mode.
+    nativeTheme.on('updated', () => {
+      if (state.themePreference === 'system') applyTitleBarOverlay()
+    })
     boot()
   })
 

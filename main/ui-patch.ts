@@ -259,6 +259,29 @@ function tokensToCss(selector: string, tokens: Record<string, string>) {
 
 /** Component rules keyed on real dsh CSS-module class suffixes. */
 const COMPONENT_CSS = `
+/* calibration grid overlay: the boot scene's grid carried into the app UI,
+   clipped to the left workspace (sidebar) column only — the conversation
+   area stays clean. A fixed, pointer-transparent sheet — pure CSS, zero cost. */
+body:not(#__dsh_patch__)::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:9990;
+  pointer-events:none;
+  /* keep the grid inside the 280px sidebar column */
+  clip-path:inset(0 calc(100% - 280px) 0 0);
+  background-image:
+    linear-gradient(rgba(25,25,25,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(25,25,25,.045) 1px, transparent 1px);
+  background-size:44px 44px;
+}
+body[data-ds-dark-theme]:not(#__dsh_patch__)::before{
+  background-image:
+    linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+  background-size:44px 44px;
+}
+
 /* selection: signal fill, ink text */
 body:not(#__dsh_patch__) ::selection{background:#fffa00;color:#111}
 body[data-ds-dark-theme]:not(#__dsh_patch__) ::selection{background:#fffa00;color:#111}
