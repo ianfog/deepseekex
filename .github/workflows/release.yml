@@ -41,19 +41,13 @@ jobs:
     # be code-signed with a Developer ID certificate; notarization is applied
     # automatically by electron-builder when the APPLE_* vars are present
     # (mac.notarize = true in package.json). Without these secrets the build
-    # falls back to unsigned ad-hoc (auto-update stays unavailable) but CI
-    # still succeeds. Required secrets:
+    # falls back to unsigned (auto-update stays unavailable) but CI succeeds.
+    # Required secrets:
     #   MAC_CSC_LINK              base64 of the Developer ID Application .p12
     #   MAC_CSC_KEY_PASSWORD      password of the .p12
     #   APPLE_ID                  Apple account used for notarization
     #   APPLE_APP_SPECIFIC_PASSWORD  app-specific password for that account
     #   APPLE_TEAM_ID             Developer team id
-    env:
-      CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -82,7 +76,25 @@ jobs:
           iconutil -c icns build/icon.iconset -o build/icon.icns
 
       - name: Build installer
-        run: npm run dist:mac -- --x64 --arm64 --publish never
+        run: |
+          set -e
+          # Export signing/notarization vars ONLY when the secrets are actually
+          # configured. GitHub substitutes unset secrets with an empty string,
+          # and electron-builder treats CSC_LINK="" as a configured-but-empty
+          # cert path (getCscLink keeps ""), which makes mac packaging fail
+          # with "<projectDir> not a file" during certificate import. Leaving
+          # the vars unset falls back to an unsigned build; notarize:true is
+          # skipped when no APPLE_* vars are present.
+          if [ -n "${{ secrets.MAC_CSC_LINK }}" ]; then
+            export CSC_LINK="${{ secrets.MAC_CSC_LINK }}"
+            export CSC_KEY_PASSWORD="${{ secrets.MAC_CSC_KEY_PASSWORD }}"
+          fi
+          if [ -n "${{ secrets.APPLE_ID }}" ]; then
+            export APPLE_ID="${{ secrets.APPLE_ID }}"
+            export APPLE_APP_SPECIFIC_PASSWORD="${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
+            export APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+          fi
+          npm run dist:mac -- --x64 --arm64 --publish never
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
