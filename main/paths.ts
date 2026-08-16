@@ -64,6 +64,11 @@ function settingsFile(userData: string) {
   return path.join(userData, 'settings.json')
 }
 
+/** Accumulated session-usage telemetry: `<userData>/usage.json`. */
+function usageFile(userData: string) {
+  return path.join(userData, 'usage.json')
+}
+
 /** Settings singleton, freshly read from disk. */
 function readSettings(userData: string) {
   try {
@@ -89,5 +94,6 @@ module.exports = {
   npmDir,
   mainLogFile,
   settingsFile,
+  usageFile,
   readSettings,
 }

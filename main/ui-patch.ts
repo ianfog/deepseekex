@@ -54,7 +54,9 @@ const LIGHT_TOKENS = {
   '--dsw-alias-label-primary': '#191919',
   '--dsw-alias-label-primary-bluish': '#191919',
   '--dsw-alias-label-primary-dimmed': 'rgba(25,25,25,.62)',
-  '--dsw-alias-label-primary-foreground': '#191919',
+  // `label-primary-foreground` is text ON solid fills: the light primary
+  // button is ink (#191919), so its label is paper (#f2f2f0).
+  '--dsw-alias-label-primary-foreground': '#f2f2f0',
   '--dsw-alias-label-primary-inverted': '#f2f2f0',
   '--dsw-alias-label-secondary': '#4f4f4a',
   '--dsw-alias-label-tertiary': '#6f6f6a',
@@ -162,7 +164,10 @@ const DARK_TOKENS = {
   '--dsw-alias-label-primary': '#f2f2f0',
   '--dsw-alias-label-primary-bluish': '#f2f2f0',
   '--dsw-alias-label-primary-dimmed': 'rgba(242,242,240,.62)',
-  '--dsw-alias-label-primary-foreground': '#f2f2f0',
+  // `label-primary-foreground` is text ON solid fills: the dark primary
+  // button is signal yellow, so its label must be ink (#191919) to stay
+  // legible — never paper/white on yellow.
+  '--dsw-alias-label-primary-foreground': '#191919',
   '--dsw-alias-label-primary-inverted': '#191919',
   '--dsw-alias-label-secondary': '#c9c9c4',
   '--dsw-alias-label-tertiary': '#a8a8a2',

@@ -8,9 +8,9 @@
 </head>
 <body>
   <header id="topbar">
-    <!-- macOS frameless window controls (hidden on other platforms, which use
-         their own chrome: Windows titleBarOverlay, Linux native frame). -->
-    <div class="win-controls" id="winControls" role="group" aria-label="窗口控制">
+    <!-- Legacy hand-drawn macOS controls: kept dormant — macOS now uses the
+         native traffic lights (titleBarStyle hidden), so these stay hidden. -->
+    <div class="win-controls" id="winControls" role="group" aria-label="窗口控制" hidden>
       <button id="winMin" class="winbtn" aria-label="最小化" title="最小化">–</button>
       <button id="winClose" class="winbtn" aria-label="关闭" title="关闭">×</button>
     </div>
@@ -38,6 +38,10 @@
       <span class="cell clickable" id="balanceCell" title="DeepSeek 平台余额（点击刷新）">
         <span class="cell-label">SYS/BALANCE</span>
         <span class="cell-value" id="balanceChip">--</span>
+      </span>
+      <span class="cell" id="usageCell" title="总使用时间（累计）">
+        <span class="cell-label">SYS/USAGE</span>
+        <span class="cell-value" id="usageChip">--</span>
       </span>
     </div>
     <div class="actions">

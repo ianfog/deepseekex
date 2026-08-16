@@ -110,6 +110,7 @@ const state: {
   nodeRuntime: string
   nodeVersion: string
   backendStartedAt: number | null
+  usageMs: number
 } = {
   phase: 'starting', // starting | ready | updating | error | quitting
   kernelVersion: null,
@@ -126,6 +127,58 @@ const state: {
   nodeRuntime: 'electron-as-node', // 'system-node' | 'electron-as-node' (backend runtime)
   nodeVersion: process.versions.node,
   backendStartedAt: null, // epoch ms when the current backend was started
+  usageMs: 0, // accumulated app usage time across sessions (ms)
+}
+
+/* ---- total usage telemetry: accumulate app-open time across sessions ---- */
+/** Persisted total (ms) before this session started. */
+let usageBaseMs = 0
+/** Epoch ms when this session's counting started. */
+let sessionStartedAt = 0
+/** Periodic persist/broadcast timer. */
+let usageTimer: ReturnType<typeof setInterval> | null = null
+
+/** Total accumulated usage in ms (persisted base + this session's elapsed). */
+function currentUsageMs(): number {
+  const elapsed = sessionStartedAt > 0 ? Math.max(0, Date.now() - sessionStartedAt) : 0
+  return usageBaseMs + elapsed
+}
+
+/** Load the persisted total from `<userData>/usage.json` (0 on first run). */
+function loadUsage() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(paths.usageFile(userData), 'utf8').replace(/^\uFEFF/, ''))
+    usageBaseMs = typeof raw.totalMs === 'number' && raw.totalMs >= 0 ? raw.totalMs : 0
+  } catch {
+    usageBaseMs = 0
+  }
+}
+
+/** Write the current total to disk (best-effort; loses at most one tick). */
+function persistUsage() {
+  try {
+    fs.writeFileSync(paths.usageFile(userData), JSON.stringify({ totalMs: currentUsageMs() }))
+  } catch (err) {
+    log.warn(`usage persist failed: ${(err as Error).message}`)
+  }
+}
+
+/** Start the 30s ticker that keeps the readout live and the total durable. */
+function startUsageTicker() {
+  stopUsageTicker()
+  usageTimer = setInterval(() => {
+    state.usageMs = currentUsageMs()
+    broadcast()
+    persistUsage()
+  }, 30_000)
+  usageTimer.unref?.()
+}
+
+function stopUsageTicker() {
+  if (usageTimer) {
+    clearInterval(usageTimer)
+    usageTimer = null
+  }
 }
 
 /** Structural type of the shell updater object (CJS exports can't be
@@ -140,6 +193,7 @@ let shellUpdater: ShellUpdaterLike | null = null
 function broadcast() {
   state.logsTail = log.tail()
   state.settings = { ...settings }
+  state.usageMs = currentUsageMs()
   if (win && !win.isDestroyed()) win.webContents.send('desktop:event', { type: 'state', state })
 }
 
@@ -344,8 +398,9 @@ function createWindow() {
     backgroundColor: '#191919',
     // Frameless-but-native-chrome: hide the system title bar and let the
     // shell paint the topbar. Windows keeps OS buttons (min/max/close) as a
-    // titleBarOverlay tinted with the Endfield ink. macOS is fully frameless
-    // (no traffic lights) and the shell draws its own min/close buttons.
+    // titleBarOverlay tinted with the Endfield ink. macOS keeps the native
+    // traffic lights (titleBarStyle hidden) instead of hand-drawn controls;
+    // Linux stays fully frameless.
     ...(process.platform === 'win32'
       ? {
           titleBarStyle: 'hidden',
@@ -355,9 +410,14 @@ function createWindow() {
             height: 52,
           },
         }
-      : {
-          frame: false,
-        }),
+      : process.platform === 'darwin'
+        ? {
+            titleBarStyle: 'hidden',
+            trafficLightPosition: { x: 16, y: 20 },
+          }
+        : {
+            frame: false,
+          }),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
@@ -694,6 +754,11 @@ if (!gotLock) {
     fs.mkdirSync(userData, { recursive: true })
     log.init(userData)
     createWindow()
+    // Total usage telemetry: load the persisted total, start counting this
+    // session, and tick every 30s to keep the readout live + durable.
+    loadUsage()
+    sessionStartedAt = Date.now()
+    startUsageTicker()
     // Title-bar window controls follow the OS color scheme in 'system' mode.
     nativeTheme.on('updated', () => {
       if (state.themePreference === 'system') applyTitleBarOverlay()
@@ -703,6 +768,9 @@ if (!gotLock) {
 
   let quitting = false
   app.on('before-quit', (e: Electron.Event) => {
+    // Final usage persist so the accumulated total survives the quit.
+    persistUsage()
+    stopUsageTicker()
     if (backend && backend.isRunning() && !quitting) {
       e.preventDefault()
       quitting = true

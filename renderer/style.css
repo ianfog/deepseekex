@@ -108,9 +108,9 @@ body { display: flex; flex-direction: column; }
 #topbar .cell.clickable {
   -webkit-app-region: no-drag;
 }
-/* macOS frameless window controls: the shell draws min/close itself (the
-   traffic lights are gone with frame:false). Hidden elsewhere — Windows has
-   its own titleBarOverlay buttons, Linux keeps the native frame. */
+/* Legacy hand-drawn window controls: dormant (display:none). Windows uses
+   its own titleBarOverlay buttons, macOS its native traffic lights, Linux
+   the native frame — so these are never shown. */
 .win-controls {
   display: none;
   flex: none;
@@ -119,11 +119,12 @@ body { display: flex; flex-direction: column; }
   margin-right: 2px;
   -webkit-app-region: no-drag;
 }
-.platform-darwin .win-controls {
-  display: flex;
-}
+/* macOS now uses the native traffic lights (titleBarStyle hidden), so the
+   hand-drawn min/close controls stay hidden and the topbar leaves room for
+   the traffic lights on the left. */
 .platform-darwin #topbar {
   gap: 12px;
+  padding-left: 82px;
 }
 .winbtn {
   width: 22px;
@@ -235,7 +236,7 @@ body { display: flex; flex-direction: column; }
   flex-direction: column;
   justify-content: center;
   gap: 3px;
-  min-width: 128px;
+  min-width: 112px;
   padding: 5px 16px;
   border-left: 1px solid var(--ef-hairline);
   position: relative;

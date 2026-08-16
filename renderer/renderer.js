@@ -20,7 +20,8 @@
  *   shellUpdate: {available:boolean, version:string|null, status?:string, progress?:number, manual?:boolean, path?:string}|null,
  *   nodeRuntime?: string,
  *   nodeVersion?: string,
- *   backendStartedAt?: number|null
+ *   backendStartedAt?: number|null,
+ *   usageMs?: number
  * }} AppState */
 
 /** @typedef {{
@@ -58,6 +59,8 @@ const els = {
   phaseChip: $('phaseChip'),
   balanceCell: $('balanceCell'),
   balanceChip: $('balanceChip'),
+  usageCell: $('usageCell'),
+  usageChip: $('usageChip'),
   opsBtn: $('opsBtn'),
   sidePanel: $('sidePanel'),
   sideClose: $('sideClose'),
@@ -314,6 +317,9 @@ function render(s) {
     els.balanceChip.title = 'DeepSeek 平台余额'
   }
 
+  // Total usage time: accumulated app-open hours across sessions.
+  els.usageChip.textContent = typeof s.usageMs === 'number' ? formatUsageHours(s.usageMs) : '--'
+
   // The dsh UI iframe: assign src once per backend URL.
   if (s.phase === 'ready' || s.phase === 'updating') {
     els.overlay.hidden = true
@@ -503,6 +509,13 @@ els.winClose.addEventListener('click', () => api.windowClose())
 /* ============================================================
  * SYS/OPS station: kernel instrument gauge
  * ============================================================ */
+
+/** Total usage in hours ("xx.x h"), per the "record xx h" requirement. */
+/** @param {number} ms */
+function formatUsageHours(ms) {
+  const h = Math.max(0, ms) / 3_600_000
+  return `${h.toFixed(1)} h`
+}
 
 /** @param {number} sec */
 function formatUptime(sec) {
