@@ -6,11 +6,10 @@
  * @module deepseekex/main
  */
 
-const { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen } = require('electron')
+const { app, BrowserWindow, ipcMain, nativeTheme, screen } = require('electron')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const crypto = require('node:crypto')
 const semver = require('semver')
 const jsyaml = require('js-yaml')
 const paths = require('./paths.ts')
@@ -91,6 +90,8 @@ interface ShellUpdateState {
   status?: string
   progress?: number
   message?: string
+  manual?: boolean
+  path?: string
 }
 
 const state: {
@@ -132,19 +133,9 @@ const state: {
 interface ShellUpdaterLike {
   check(): Promise<{ ok: boolean; available: boolean; version: string | null; message?: string }>
   apply(): Promise<{ ok: boolean; message?: string }>
+  reveal(): Promise<{ ok: boolean; message?: string; path?: string }>
 }
 let shellUpdater: ShellUpdaterLike | null = null
-
-/** Shape of the shell-update telemetry mirrored into state. */
-interface ShellUpdateState {
-  available: boolean
-  version: string | null
-  downloading: boolean
-  downloaded: boolean
-  status?: string
-  progress?: number
-  message?: string
-}
 
 function broadcast() {
   state.logsTail = log.tail()
@@ -179,6 +170,8 @@ function initShellUpdater() {
         sendProgress(s.progress, 'SHELL UPDATE')
       } else if (s.status === 'downloaded') {
         sendProgress(100, 'SHELL READY')
+      } else if (s.status === 'dmg-ready') {
+        sendProgress(100, 'MANUAL INSTALL')
       } else if (s.status === 'installing') {
         sendProgress(100, 'INSTALLING')
       }
@@ -349,10 +342,10 @@ function createWindow() {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#191919',
-    // Frameless-but-native-chrome on Windows: hide the system title bar and
-    // let the shell paint the topbar; keep the OS window buttons (min/max/
-    // close) as a titleBarOverlay tinted with the Endfield ink. macOS keeps
-    // its native frame (traffic lights) to avoid overlapping the brand.
+    // Frameless-but-native-chrome: hide the system title bar and let the
+    // shell paint the topbar. Windows keeps OS buttons (min/max/close) as a
+    // titleBarOverlay tinted with the Endfield ink. macOS is fully frameless
+    // (no traffic lights) and the shell draws its own min/close buttons.
     ...(process.platform === 'win32'
       ? {
           titleBarStyle: 'hidden',
@@ -362,7 +355,9 @@ function createWindow() {
             height: 52,
           },
         }
-      : {}),
+      : {
+          frame: false,
+        }),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
@@ -370,6 +365,15 @@ function createWindow() {
       sandbox: true,
     },
   })
+  // Dev-mode window icons: packaged apps get build/icon.ico / icon.icns from
+  // electron-builder; in `npm start` Electron would otherwise show its default
+  // icon. build/ is not packaged (existsSync guard keeps this a no-op there).
+  const icon = path.join(__dirname, '..', 'build', 'icon.ico')
+  if (process.platform === 'win32' && fs.existsSync(icon)) win!.setIcon(icon)
+  if (process.platform === 'darwin') {
+    const png = path.join(__dirname, '..', 'build', 'icon.png')
+    if (fs.existsSync(png)) app.dock?.setIcon(png)
+  }
   // Open as a normal (non-maximized) window: size fits the work area without
   // covering the whole screen. Show once the page is paintable.
   win!.once('ready-to-show', () => {
@@ -399,7 +403,10 @@ function createWindow() {
     // The Endfield industrial look is dark by design: force the carbon shell
     // unless the user explicitly picked a light 配色.
     const forceDark = readThemePreference() !== 'light'
-    for (const delay of [0, 1000, 4000]) {
+    // Re-applied on a spread of delays because the dsh app injects its module
+    // stylesheets lazily (some chunks land long after load) — the patch must
+    // stay last among equal-specificity rules to win.
+    for (const delay of [0, 1000, 4000, 8000, 16000]) {
       setTimeout(() => {
         if (win && !win!.isDestroyed()) void uiPatch.applyUiPatches(win, { forceDark })
       }, delay)
@@ -503,44 +510,18 @@ function armThemeWatcher() {
   }
 }
 
-/**
- * Switch the host workspace by writing the workspace storage document and
- * restarting the backend. The in-app directory picker (koffi native dialog /
- * browse flow) is unreliable inside this app's runtime, so the shell owns the
- * pick via Electron's native folder dialog and persists the result directly.
- * @param {string} dir - absolute directory path to become the workspace.
- * @returns {Promise<void>}
- */
-async function switchWorkspace(dir: string) {
-  const canonical = fs.realpathSync(dir)
-  const title = path.basename(canonical)
-  const id = crypto.randomUUID()
-  const storageDir = path.join(dshHomeDir(), 'storages')
-  const file = path.join(storageDir, 'workspace.json')
-  fs.mkdirSync(storageDir, { recursive: true })
-  const doc = fs.existsSync(file)
-    ? JSON.parse(fs.readFileSync(file, 'utf8'))
-    : { unit: { name: 'workspace', version: 2 }, global: { initialized: true, workspaceIds: [], archivedSessionIds: [] }, tables: { workspaces: {} } }
-  doc.global = { ...(doc.global || {}), initialized: true, workspaceIds: [id, ...(doc.global?.workspaceIds || [])] }
-  doc.tables = doc.tables || {}
-  doc.tables.workspaces = doc.tables.workspaces || {}
-  doc.tables.workspaces[id] = {
-    path: canonical,
-    title,
-    sessionIds: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }
-  fs.writeFileSync(file, JSON.stringify(doc, null, 2))
-  log.info(`workspace switched to ${canonical} (${file})`)
-  // Restart the backend so the storage domain re-reads the document.
-  await startBackend()
-}
-
 // ---- IPC ----
 
 ipcMain.handle('desktop:get-state', () => state)
 ipcMain.handle('desktop:get-settings', () => ({ ...settings }))
+
+// Frameless window controls (used on macOS, where the traffic lights are gone).
+ipcMain.handle('desktop:window-minimize', () => {
+  win?.minimize()
+})
+ipcMain.handle('desktop:window-close', () => {
+  win?.close()
+})
 
 // Manual balance refresh (click the SYS/BALANCE cell).
 ipcMain.handle('desktop:refresh-balance', async () => {
@@ -558,34 +539,9 @@ ipcMain.handle('desktop:shell-update-apply', async () => {
   initShellUpdater()
   return shellUpdater!.apply()
 })
-
-// Workspace switch: native folder dialog in the shell, then persist + restart.
-ipcMain.handle('desktop:pick-workspace', async () => {
-  if (!win) return { ok: false, message: 'no window' }
-  state.message = '正在重启内核…'
-  broadcast()
-  const result = await dialog.showOpenDialog(win, {
-    title: '选择工作区目录',
-    properties: ['openDirectory', 'createDirectory'],
-  })
-  if (result.canceled || result.filePaths.length === 0) {
-    state.message = state.phase === 'ready' ? 'ready' : state.message
-    broadcast()
-    return { ok: false, canceled: true }
-  }
-  try {
-    await switchWorkspace(result.filePaths[0])
-    state.phase = 'ready'
-    state.message = `工作区已切换`
-    broadcast()
-    return { ok: true, path: result.filePaths[0] }
-  } catch (err) {
-    state.phase = 'error'
-    state.message = `切换工作区失败: ${(err as Error).message}`
-    log.error(`workspace switch failed: ${(err as Error).message}`)
-    broadcast()
-    return { ok: false, message: (err as Error).message }
-  }
+ipcMain.handle('desktop:shell-update-reveal', async () => {
+  initShellUpdater()
+  return shellUpdater!.reveal()
 })
 
 ipcMain.handle('desktop:save-settings', async (_e: Electron.IpcMainInvokeEvent, patch: { dshHome?: string; npmRegistry?: string; autoCheck?: boolean }) => {

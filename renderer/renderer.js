@@ -17,7 +17,7 @@
  *   logsTail: string[],
  *   themePreference: string,
  *   balance: ({ok:true, total:number, currency:string, isAvailable:boolean, low:boolean, toppedUp:number, granted:number}|{ok:false, reason?:string, message?:string})|null,
- *   shellUpdate: {available:boolean, version:string|null, status?:string, progress?:number}|null,
+ *   shellUpdate: {available:boolean, version:string|null, status?:string, progress?:number, manual?:boolean, path?:string}|null,
  *   nodeRuntime?: string,
  *   nodeVersion?: string,
  *   backendStartedAt?: number|null
@@ -30,11 +30,14 @@
  *   refreshBalance(): Promise<{ok:boolean, total?:number, currency?:string, isAvailable?:boolean, low?:boolean, reason?:string} | null>,
  *   shellUpdateCheck(): Promise<{ok:boolean, available?:boolean, version?:string|null} | null>,
  *   shellUpdateApply(): Promise<{ok:boolean, message?:string} | null>,
- *   pickWorkspace(): Promise<unknown>,
+ *   shellUpdateReveal(): Promise<{ok:boolean, message?:string} | null>,
  *   checkUpdate(): Promise<unknown>,
  *   applyUpdate(): Promise<unknown>,
  *   restartBackend(): Promise<unknown>,
  *   retryBoot(): Promise<unknown>,
+ *   windowMinimize(): Promise<unknown>,
+ *   windowClose(): Promise<unknown>,
+ *   platform: string,
  *   onEvent(cb: (ev: {type:string, state:AppState}) => void): void,
  *   onProgress(cb: (p: {pct:number, label:string}) => void): void
  * }} Api */
@@ -43,6 +46,10 @@
 const api = /** @type {Api} */ (window.deepseekex)
 /** @param {string} id @returns {any} */
 const $ = (id) => document.getElementById(id)
+
+// Platform hint for CSS: on macOS the window is fully frameless (no traffic
+// lights), so the shell draws its own min/close controls in the topbar.
+if (api.platform === 'darwin') document.body.classList.add('platform-darwin')
 
 const els = {
   statusDot: $('statusDot'),
@@ -65,10 +72,12 @@ const els = {
   updateProgress: $('updateProgress'),
   updateProgressFill: $('updateProgressFill'),
   updateProgressLabel: $('updateProgressLabel'),
-  workspaceBtn: $('workspaceBtn'),
   settingsBtn: $('settingsBtn'),
   logsBtn: $('logsBtn'),
   logsClose: $('logsClose'),
+  winControls: $('winControls'),
+  winMin: $('winMin'),
+  winClose: $('winClose'),
   overlay: $('overlay'),
   overlayKicker: $('overlayKicker'),
   bootCanvas: $('bootCanvas'),
@@ -339,7 +348,12 @@ function render(s) {
   // Update button: shell self-update takes priority over kernel update.
   const shell = s.shellUpdate
   const shellAction =
-    shell && (shell.available || shell.status === 'downloading' || shell.status === 'downloaded' || shell.status === 'installing')
+    shell &&
+    (shell.available ||
+      shell.status === 'downloading' ||
+      shell.status === 'downloaded' ||
+      shell.status === 'installing' ||
+      shell.status === 'dmg-ready')
   if (s.phase === 'updating') {
     els.updateBtn.hidden = true
   } else if (shellAction && shell.status === 'downloading') {
@@ -347,6 +361,12 @@ function render(s) {
     els.updateBtn.textContent = `下载壳 ${shell.version || ''} ${shell.progress != null ? shell.progress + '%' : ''}`
     els.updateBtn.className = 'btn ghost'
     els.updateBtn.disabled = true
+  } else if (shellAction && shell.status === 'dmg-ready') {
+    // macOS manual flow: dmg downloaded — reopen it for the drag-into-Apps step.
+    els.updateBtn.hidden = false
+    els.updateBtn.textContent = `手动安装 ${shell.version || ''}（已下载）`
+    els.updateBtn.className = 'btn warn'
+    els.updateBtn.disabled = false
   } else if (shellAction && (shell.status === 'downloaded' || shell.status === 'installing')) {
     els.updateBtn.hidden = false
     els.updateBtn.textContent = '重启完成更新'
@@ -425,10 +445,18 @@ api.onProgress(({ pct, label }) => {
 
 els.updateBtn.addEventListener('click', async () => {
   const shell = state && state.shellUpdate
-  // Shell update available: download then restart to install.
-  if (shell && (shell.available || shell.status === 'downloaded' || shell.status === 'downloading')) {
+  // Shell update: macOS downloads the dmg for a manual drag-into-Apps install;
+  // Windows/Linux download then restart to install.
+  if (shell && (shell.available || shell.status === 'downloaded' || shell.status === 'downloading' || shell.status === 'dmg-ready')) {
+    if (shell.status === 'dmg-ready') {
+      // dmg already downloaded: reopen it in Finder (reveal).
+      await api.shellUpdateReveal()
+      return
+    }
     if (shell.status === 'downloaded') {
       if (!window.confirm('壳更新已下载，确定现在重启并安装吗？')) return
+    } else if (api.platform === 'darwin') {
+      if (!window.confirm(`确定下载壳 ${shell.version} 吗？下载后请在 Finder 中把 Deepseekex 拖入 Applications 完成安装。`)) return
     } else if (!window.confirm(`确定要更新壳到 ${shell.version} 吗？`)) {
       return
     }
@@ -453,12 +481,6 @@ els.updateBtn.addEventListener('click', async () => {
   }
 })
 
-els.workspaceBtn.addEventListener('click', async () => {
-  els.workspaceBtn.disabled = true
-  await api.pickWorkspace()
-  els.workspaceBtn.disabled = false
-})
-
 // Click the balance cell to refresh it live (button-like affordance).
 els.balanceCell.addEventListener('click', async () => {
   els.balanceChip.textContent = '…'
@@ -473,6 +495,10 @@ els.balanceCell.addEventListener('click', async () => {
     els.balanceChip.className = 'cell-value fault'
   }
 })
+
+// Frameless window controls (macOS): the shell draws min/close itself.
+els.winMin.addEventListener('click', () => api.windowMinimize())
+els.winClose.addEventListener('click', () => api.windowClose())
 
 /* ============================================================
  * SYS/OPS station: kernel instrument gauge

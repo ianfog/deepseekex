@@ -39,7 +39,7 @@ async function main() {
   const info = await cdp(chrome, 'Runtime.evaluate', {
     expression: `(() => {
       const els = {};
-      for (const id of ['settingsBtn', 'logsBtn', 'updateBtn', 'workspaceBtn']) {
+      for (const id of ['settingsBtn', 'logsBtn', 'updateBtn']) {
         const el = document.getElementById(id);
         if (!el) { els[id] = { missing: true }; continue; }
         const r = el.getBoundingClientRect();

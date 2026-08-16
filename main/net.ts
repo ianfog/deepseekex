@@ -23,7 +23,11 @@ async function httpGetJson(url: string, { timeoutMs = 20_000, headers = {} }: { 
 }
 
 /** Download a URL to a file, returning the byte count. */
-async function download(url: string, dest: string, { timeoutMs = 300_000 }: { timeoutMs?: number } = {}): Promise<number> {
+async function download(
+  url: string,
+  dest: string,
+  { timeoutMs = 300_000, onProgress }: { timeoutMs?: number; onProgress?: (pct: number) => void } = {},
+): Promise<number> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -32,10 +36,27 @@ async function download(url: string, dest: string, { timeoutMs = 300_000 }: { ti
       signal: controller.signal,
     })
     if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`)
-    const buf = Buffer.from(await res.arrayBuffer())
+    const total = Number(res.headers.get('content-length')) || 0
     fs.mkdirSync(require('node:path').dirname(dest), { recursive: true })
-    fs.writeFileSync(dest, buf)
-    return buf.length
+    const file = fs.createWriteStream(dest)
+    let received = 0
+    try {
+      // Node >= 22 web streams are async-iterable; write chunk-by-chunk so a
+      // 120MB dmg never sits fully in memory and progress is reported.
+      for await (const chunk of res.body as AsyncIterable<Buffer>) {
+        received += chunk.length
+        if (total && onProgress) onProgress(Math.min(100, Math.round((received / total) * 100)))
+        if (!file.write(chunk)) await new Promise((r) => file.once('drain', r))
+      }
+      file.end()
+      await new Promise<void>((resolve, reject) => {
+        file.on('finish', resolve)
+        file.on('error', reject)
+      })
+    } finally {
+      file.destroy()
+    }
+    return received
   } finally {
     clearTimeout(timer)
   }

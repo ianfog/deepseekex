@@ -17,15 +17,18 @@ contextBridge.exposeInMainWorld('deepseekex', {
   refreshBalance: () => ipcRenderer.invoke('desktop:refresh-balance'),
   shellUpdateCheck: () => ipcRenderer.invoke('desktop:shell-update-check'),
   shellUpdateApply: () => ipcRenderer.invoke('desktop:shell-update-apply'),
-  pickWorkspace: () => ipcRenderer.invoke('desktop:pick-workspace'),
+  shellUpdateReveal: () => ipcRenderer.invoke('desktop:shell-update-reveal'),
   checkUpdate: () => ipcRenderer.invoke('desktop:check-update'),
   applyUpdate: () => ipcRenderer.invoke('desktop:apply-update'),
   restartBackend: () => ipcRenderer.invoke('desktop:restart-backend'),
   retryBoot: () => ipcRenderer.invoke('desktop:retry-boot'),
+  windowMinimize: () => ipcRenderer.invoke('desktop:window-minimize'),
+  windowClose: () => ipcRenderer.invoke('desktop:window-close'),
   onEvent: (cb) => {
     ipcRenderer.on('desktop:event', (_event, payload) => cb(payload))
   },
   onProgress: (cb) => {
     ipcRenderer.on('desktop:progress', (_event, payload) => cb(payload))
   },
+  platform: process.platform,
 })

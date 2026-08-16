@@ -108,6 +108,45 @@ body { display: flex; flex-direction: column; }
 #topbar .cell.clickable {
   -webkit-app-region: no-drag;
 }
+/* macOS frameless window controls: the shell draws min/close itself (the
+   traffic lights are gone with frame:false). Hidden elsewhere — Windows has
+   its own titleBarOverlay buttons, Linux keeps the native frame. */
+.win-controls {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-right: 2px;
+  -webkit-app-region: no-drag;
+}
+.platform-darwin .win-controls {
+  display: flex;
+}
+.platform-darwin #topbar {
+  gap: 12px;
+}
+.winbtn {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ef-paper-dim);
+  font-family: var(--ef-font-ui);
+  font-size: 15px;
+  line-height: 1;
+  border-radius: var(--ef-radius);
+  cursor: default;
+  transition: background var(--ef-fast), color var(--ef-fast);
+}
+.winbtn:hover {
+  background: var(--ef-ink-hover);
+  color: var(--ef-paper);
+}
+#winClose:hover {
+  background: var(--ef-danger);
+  color: #fff;
+}
 /* signal rail under the topbar: yellow wipe in on load, fades right */
 #topbar::after {
   content: "";

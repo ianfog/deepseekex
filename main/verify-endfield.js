@@ -52,15 +52,18 @@ contextBridge.exposeInMainWorld('deepseekex', {
   saveSettings: () => Promise.resolve({ ok: true }),
   checkUpdate: () => Promise.resolve({ ok: true }),
   applyUpdate: () => Promise.resolve({ ok: true }),
-  pickWorkspace: () => Promise.resolve({ ok: true, canceled: true }),
   retryBoot: () => Promise.resolve({ ok: true }),
+  windowMinimize: () => Promise.resolve({ ok: true }),
+  windowClose: () => Promise.resolve({ ok: true }),
   onEvent: (cb) => pending.push(cb),
   onProgress: (cb) => pendingProgress.push(cb),
   refreshBalance: () => Promise.resolve({ ok: true, total: 1.94, granted: 0, toppedUp: 1.94, currency: 'CNY', isAvailable: true, low: true }),
   shellUpdateCheck: () => Promise.resolve({ ok: true, available: false }),
   shellUpdateApply: () => Promise.resolve({ ok: true }),
+  shellUpdateReveal: () => Promise.resolve({ ok: true }),
   __setState: (s) => { state = s; for (const cb of pending) cb({ type: 'state', state }); },
   __progress: (pct, label) => { for (const cb of pendingProgress) cb({ pct, label }); },
+  platform: process.platform,
 });
 `
 
@@ -216,8 +219,8 @@ async function main() {
     return true;
   })()`
   // Mirror main/index.js: the ui-theme plugin injects its stylesheets lazily,
-  // so the patch is re-applied at 0/1000/4000ms to stay on top.
-  for (const delay of [0, 1000, 4000]) {
+  // so the patch is re-applied on a spread of delays to stay last.
+  for (const delay of [0, 1000, 4000, 8000, 16000]) {
     await sleep(delay)
     const patchResult = await frame.executeJavaScript(script)
     console.log(`patch injected (delay ${delay}ms):`, patchResult)

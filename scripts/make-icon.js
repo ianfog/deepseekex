@@ -1,15 +1,18 @@
 'use strict'
 /**
- * Generate build/icon.ico (multi-size 16/24/32/48/64/128/256) for
- * electron-builder.
+ * Generate build/icon.ico (multi-size 16/24/32/48/64/128/256) and
+ * build/icon.png (512px, macOS icns source) for electron-builder.
  *
- * Endfield-style mark: ink square, signal-yellow diamond (rotated square),
- * inner ink diamond, small yellow core — the same "calibration target"
- * language as the shell emblem. Pure Node: hand-rolled 32-bpp BMP-in-ICO
- * encoder (BITMAPINFOHEADER + bottom-up BGRA + AND mask), the classic
- * format every icon parser reads; no native image libraries needed.
- * Geometry is recomputed per size (exact, not resampled), so every size
- * stays crisp.
+ * Endfield "signal core" mark, v2: rounded ink tile + hairline instrument
+ * frame + bold signal-yellow diamond ring with an ink field and a signal core
+ * diamond — the same calibration-target language as the shell emblem, drawn
+ * boldly so it reads at 16px. 4× supersampling gives smooth edges (the v1
+ * icon was hard-edged and target-thin, muddy at small sizes).
+ *
+ * Pure Node: hand-rolled 32-bpp BMP-in-ICO encoder (BITMAPINFOHEADER +
+ * bottom-up BGRA + alpha-aware AND mask) and a minimal PNG encoder
+ * (RGBA, color type 6); no native image libraries needed.
+ * Geometry is recomputed per size (exact, not resampled).
  *
  * Usage: node scripts/make-icon.js [out.ico]
  */
@@ -20,9 +23,12 @@ const zlib = require('node:zlib')
 
 const SIZES = [16, 24, 32, 48, 64, 128, 256]
 const PNG_SIZE = 512
+/** Supersampling factor for anti-aliased edges. */
+const SS = 4
 
 // ---- palette ----
-const INK = [0x19, 0x19, 0x19] // #191919
+const INK = [0x19, 0x19, 0x19] // #191919 tile
+const INK_RAISED = [0x23, 0x23, 0x23] // #232323 (subtle inset panel)
 const SIGNAL = [0xff, 0xfa, 0x00] // #fffa00
 const PAPER = [0xf2, 0xf2, 0xf0] // #f2f2f0 (hairline accents)
 
@@ -31,58 +37,98 @@ function inDiamond(x, y, cx, cy, r) {
   return Math.abs(x - cx) + Math.abs(y - cy) <= r
 }
 
-/** Render one size into a top-left-origin BGRA buffer. */
-function draw(size) {
+/** True when (x,y) is inside an axis-aligned rounded square (squircle-ish). */
+function inRoundSquare(x, y, cx, cy, half, radius) {
+  const dx = Math.abs(x - cx)
+  const dy = Math.abs(y - cy)
+  if (dx > half || dy > half) return false
+  if (dx <= half - radius || dy <= half - radius) return true
+  const ox = dx - (half - radius)
+  const oy = dy - (half - radius)
+  return ox * ox + oy * oy <= radius * radius
+}
+
+/** Render the mark into a top-left-origin BGRA buffer at `size` resolution.
+ *  `px(v)` converts a final-size fraction/absolute to raw pixels. */
+function drawRaw(size) {
   const buf = Buffer.alloc(size * size * 4)
   const c = size / 2
-  const put = (x, y, [r, g, b]) => {
+  const put = (x, y, [r, g, b], a = 255) => {
+    if (x < 0 || y < 0 || x >= size || y >= size) return
     const i = (y * size + x) * 4
     buf[i] = b // BGRA order for the BMP encoder
     buf[i + 1] = g
     buf[i + 2] = r
-    buf[i + 3] = 255
+    buf[i + 3] = a
   }
 
-  // background: ink square
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) put(x, y, INK)
+  const tileR = 0.22 * size // macOS-style rounded tile
+  const inset = 0.045 * size // instrument frame inset
+  const frameW = Math.max(1, Math.round(size / 220)) // ~1px hairline at 256
 
-  // hairline corner brackets
-  const bracket = size >= 48 ? 5 : size >= 24 ? 3 : 2
-  const line = Math.max(1, Math.round(size / 64))
+  // --- tile: rounded ink square (transparent outside) ---
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const nearTL = x <= bracket && y <= bracket && (x <= line || y <= line)
-      const nearTR = x >= size - 1 - bracket && y <= bracket && (x >= size - 1 - line || y <= line)
-      const nearBL = x <= bracket && y >= size - 1 - bracket && (x <= line || y >= size - 1 - line)
-      const nearBR = x >= size - 1 - bracket && y >= size - 1 - bracket && (x >= size - 1 - line || y >= size - 1 - line)
-      if (nearTL || nearTR || nearBL || nearBR) put(x, y, PAPER)
+      if (inRoundSquare(x, y, c, c, c - 0.5, tileR)) put(x, y, INK)
     }
   }
 
-  // main signal diamond, inner ink diamond, core signal diamond
-  const rOuter = size * 0.42
-  const rInner = size * 0.26
-  const rCore = size * 0.07
+  // --- instrument frame: paper hairline rounded square ---
+  if (size >= 160) {
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const inFrame = inRoundSquare(x, y, c, c, c - inset, tileR - inset)
+        const inInner = inRoundSquare(x, y, c, c, c - inset - frameW, tileR - inset - frameW)
+        if (inFrame && !inInner) put(x, y, PAPER)
+      }
+    }
+  }
+
+  // --- bold signal diamond ring + ink field + signal core ---
+  const rOuter = 0.44 * size
+  const rInk = 0.32 * size
+  const rCore = 0.095 * size
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       if (inDiamond(x, y, c, c, rOuter)) put(x, y, SIGNAL)
-      if (inDiamond(x, y, c, c, rInner)) put(x, y, INK)
+      if (inDiamond(x, y, c, c, rInk)) put(x, y, INK)
       if (inDiamond(x, y, c, c, rCore)) put(x, y, SIGNAL)
     }
-  }
-
-  // signal rail along the top (the shell's yellow wipe)
-  if (size >= 24) {
-    const railH = Math.max(1, Math.round(size / 64))
-    for (let y = 0; y < railH; y++) for (let x = Math.round(size * 0.06); x < Math.round(size * 0.47); x++) put(x, y, SIGNAL)
   }
 
   return buf
 }
 
+/** Draw at SS× then average-downsample: smooth anti-aliased edges. */
+function draw(size) {
+  const big = drawRaw(size * SS)
+  const out = Buffer.alloc(size * size * 4)
+  const n = SS * SS
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let r = 0, g = 0, b = 0, a = 0
+      for (let sy = 0; sy < SS; sy++) {
+        for (let sx = 0; sx < SS; sx++) {
+          const i = ((y * SS + sy) * (size * SS) + (x * SS + sx)) * 4
+          r += big[i + 2]
+          g += big[i + 1]
+          b += big[i]
+          a += big[i + 3]
+        }
+      }
+      const i = (y * size + x) * 4
+      out[i] = Math.round(b / n)
+      out[i + 1] = Math.round(g / n)
+      out[i + 2] = Math.round(r / n)
+      out[i + 3] = Math.round(a / n)
+    }
+  }
+  return out
+}
+
 /**
  * Encode a 32-bpp icon entry: BITMAPINFOHEADER + bottom-up BGRA pixels
- * (doubled height: XOR surface + AND mask) — the classic ICO format.
+ * (XOR surface) + an alpha-aware 1-bpp AND mask — the classic ICO format.
  */
 function encodeBmpEntry(size, bgra) {
   const header = Buffer.alloc(40)
@@ -93,14 +139,24 @@ function encodeBmpEntry(size, bgra) {
   header.writeUInt16LE(32, 14) // biBitCount
   header.writeUInt32LE(0, 16) // biCompression (BI_RGB)
   header.writeUInt32LE(size * size * 4, 20) // biSizeImage (XOR only)
-  // bottom-up rows
+  // bottom-up rows (XOR surface)
   const xor = Buffer.alloc(size * size * 4)
   for (let y = 0; y < size; y++) {
     bgra.copy(xor, y * size * 4, (size - 1 - y) * size * 4, (size - y) * size * 4)
   }
-  // AND mask: 1 bit per pixel, all opaque -> 0
+  // AND mask: 1 bpp, LSB-first per row, padded to 32 bits; 1 = transparent.
+  // Rows are stored in the same bottom-up order as the XOR surface.
   const maskRowBytes = Math.ceil(size / 32) * 4
   const and = Buffer.alloc(maskRowBytes * size)
+  for (let y = 0; y < size; y++) {
+    const srcRow = (size - 1 - y) * size * 4 // bottom-up, matching XOR
+    for (let x = 0; x < size; x++) {
+      if (bgra[srcRow + x * 4 + 3] < 128) {
+        const byte = y * maskRowBytes + (x >> 3)
+        and[byte] |= 1 << (x & 7)
+      }
+    }
+  }
   return Buffer.concat([header, xor, and])
 }
 

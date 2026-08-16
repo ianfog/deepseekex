@@ -9,10 +9,17 @@
  *
  * Events are pushed to the chrome renderer through a callback so the top bar
  * can show shell-update availability and download progress.
+ *
+ * macOS: Squirrel.Mac only applies updates to signed apps, so an unsigned
+ * build falls back to a manual flow — download the release dmg, open it in
+ * Finder and let the user drag the app into /Applications. Windows/Linux keep
+ * the automatic download-then-install path.
  * @module deepseekex/shell-updater
  */
 
 const log = require('./log.ts')
+const path = require('node:path')
+const os = require('node:os')
 
 /** Snapshot pushed to the renderer through the `onState` callback. */
 type ShellUpdateState = {
@@ -23,6 +30,8 @@ type ShellUpdateState = {
   status: string
   message?: string
   progress?: number
+  manual?: boolean
+  path?: string
 }
 
 /** Per-event fields merged into the base snapshot by `emit`. */
@@ -31,6 +40,8 @@ type ShellUpdatePatch = {
   message?: string
   progress?: number
   version?: string
+  manual?: boolean
+  path?: string
 }
 
 /**
@@ -48,6 +59,8 @@ function createShellUpdater({ onState = () => {} }: { onState?: (state: ShellUpd
   let available = false
   let downloading = false
   let downloaded = false
+  /** dmg downloaded by the macOS manual flow (empty until one is fetched). */
+  let manualDmgPath: string | null = null
 
   const emit = (patch: ShellUpdatePatch) => onState({
     available,
@@ -94,8 +107,50 @@ function createShellUpdater({ onState = () => {} }: { onState?: (state: ShellUpd
     }
   }
 
-  /** Download (if needed) then quit-and-install. */
+  /**
+   * macOS manual update: Squirrel.Mac refuses to install updates into an
+   * unsigned app (code signing is mandatory for auto-update on macOS), so
+   * instead of the automatic path we download the release dmg and open it in
+   * Finder — the user drags the app into /Applications once.
+   */
+  async function applyMacManual() {
+    try {
+      if (!latestVersion) {
+        // Stale state (apply pressed without a preceding check): re-check.
+        await check()
+        if (!latestVersion) throw new Error('no update version known')
+      }
+      const version = latestVersion
+      const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+      const url = `https://github.com/ianfog/deepseekex/releases/download/v${version}/Deepseekex-${version}-mac-${arch}.dmg`
+      const dest = path.join(os.tmpdir(), `Deepseekex-${version}-mac-${arch}.dmg`)
+      downloading = true
+      manualDmgPath = null
+      emit({ status: 'downloading', progress: 0, message: '正在下载 dmg…' })
+      const { download } = require('./net.ts')
+      const bytes = await download(url, dest, {
+        onProgress: (pct: number) => emit({ status: 'downloading', progress: pct }),
+      })
+      downloading = false
+      downloaded = true
+      manualDmgPath = dest
+      log.info(`shell dmg downloaded: ${dest} (${bytes} bytes)`)
+      emit({ status: 'dmg-ready', progress: 100, manual: true, path: dest, message: 'dmg 已下载，请拖入 Applications 完成安装' })
+      const { shell } = require('electron')
+      const err = await shell.openPath(dest)
+      if (err) log.warn(`openPath dmg failed: ${err}`)
+      return { ok: true, manual: true, version, path: dest }
+    } catch (err: any) {
+      downloading = false
+      log.warn(`mac shell update download failed: ${err.message}`)
+      emit({ status: 'error', message: err.message })
+      return { ok: false, message: err.message }
+    }
+  }
+
+  /** Download (if needed) then quit-and-install. macOS uses the manual flow. */
   async function apply() {
+    if (process.platform === 'darwin') return applyMacManual()
     try {
       if (!downloaded) {
         downloading = true
@@ -113,7 +168,15 @@ function createShellUpdater({ onState = () => {} }: { onState?: (state: ShellUpd
     }
   }
 
-  return { check, apply }
+  /** Reveal the downloaded dmg in Finder (macOS manual flow). */
+  async function reveal() {
+    if (!manualDmgPath) return { ok: false, message: 'no dmg downloaded' }
+    const { shell } = require('electron')
+    shell.showItemInFolder(manualDmgPath)
+    return { ok: true, path: manualDmgPath }
+  }
+
+  return { check, apply, reveal }
 }
 
 module.exports = { createShellUpdater }

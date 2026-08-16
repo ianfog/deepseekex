@@ -131,8 +131,10 @@ npm run dist:mac   # 在 macOS 上构建 dmg + zip（需在 macOS 上执行）
   用 `--user-data-dir=<临时目录>` 避开单实例锁再启动。打包后的 exe 首次运行会自举
   npm CLI 并安装最新内核（联网）；也可把已装内核复制进
   `%DSH_DESKTOP_USERDATA%/kernels/` 并写 `active.json` 离线验证。
-- 正式发布 Windows 需代码签名（避免 SmartScreen 提示）；macOS 需 Apple Developer 证书
-  签名 + 公证（Gatekeeper），当前 `electron-builder` 配置为未签名构建，供内部试用。
+- 正式发布 Windows 需代码签名（避免 SmartScreen 提示）；macOS **自动更新强制要求** Developer ID
+  证书签名 + 公证（electron-builder 官方文档：macOS 应用必须签名，Squirrel.Mac 才会应用更新，
+  未签名构建在签名校验阶段即被拒绝）。CI 已接入签名/公证（见下方 secrets），未配置 secrets
+  时退回未签名构建，CI 照常通过。
 - 应用图标：`build/icon.ico` 与 `build/icon.png`（512px）均由 `node scripts/make-icon.js` 生成
   （Endfield 风格菱形标，纯 Node 编码无外部依赖）；macOS 的 `icon.icns` 在 CI 里由 PNG 自动转换，
   本地 mac 构建可照搬 workflow 里的 `sips` + `iconutil` 命令。
@@ -140,8 +142,12 @@ npm run dist:mac   # 在 macOS 上构建 dmg + zip（需在 macOS 上执行）
   `.github/workflows/release.yml` —— Windows 与 macOS 双 runner 原生构建，自动把
   exe / blockmap / latest.yml / dmg / zip / latest-mac.yml 全部挂到该 tag 的 Release 页，
   electron-updater 自更新清单同步生成。
-- **macOS 注意事项**：dmg 必须在 macOS 上构建（CI 的 macOS runner 满足）；当前为未签名构建，
-  用户首次打开需右键 → 打开（或 `xattr -cr`），正式分发需 Apple Developer 证书签名 + 公证。
+- **macOS 注意事项**：dmg 必须在 macOS 上构建（CI 的 macOS runner 满足）；未配置签名 secrets 时
+  产物为未签名构建，用户首次打开需右键 → 打开（或 `xattr -cr`）；配置后（Developer ID 签名 +
+  公证）可正常双击安装并支持自动更新。**所需 GitHub secrets**：`MAC_CSC_LINK`（Developer ID
+  Application 证书 p12 的 base64）、`MAC_CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、
+  `APPLE_TEAM_ID`；electron-builder 检测到这些变量后自动完成签名 + notarytool 公证
+  （`mac.notarize: true`），公证失败会中断构建，防止发布不可用的更新。
 
 ## 目录
 

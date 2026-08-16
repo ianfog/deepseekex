@@ -8,6 +8,12 @@
 </head>
 <body>
   <header id="topbar">
+    <!-- macOS frameless window controls (hidden on other platforms, which use
+         their own chrome: Windows titleBarOverlay, Linux native frame). -->
+    <div class="win-controls" id="winControls" role="group" aria-label="窗口控制">
+      <button id="winMin" class="winbtn" aria-label="最小化" title="最小化">–</button>
+      <button id="winClose" class="winbtn" aria-label="关闭" title="关闭">×</button>
+    </div>
     <div class="brand">
       <span class="dot" id="statusDot" title="状态"></span>
       <span class="emblem" title="Deepseekex" aria-hidden="true"></span>
@@ -41,7 +47,6 @@
       </div>
       <button id="updateBtn" class="btn" hidden>检查更新</button>
       <button id="opsBtn" class="btn ghost" aria-pressed="false" title="SYS/OPS 运营侧栏"><span class="idx">04</span><span>OPS</span></button>
-      <button id="workspaceBtn" class="btn ghost"><span class="idx">01</span><span>工作区</span></button>
       <button id="settingsBtn" class="btn ghost"><span class="idx">02</span><span>设置</span></button>
       <button id="logsBtn" class="btn ghost"><span class="idx">03</span><span>日志</span></button>
     </div>

@@ -360,11 +360,15 @@ textarea:focus,input:focus,[contenteditable="true"]:focus{
   letter-spacing:-.02em;
 }
 
-/* outline controls: model trigger, tool chips, preview toggles */
+/* outline controls: model trigger, tool chips, preview toggles.
+   !important: the dsh settings/other modules inject their CSS lazily, AFTER
+   the patch's last re-application, and equal-specificity rules would then win
+   (settings modal falls back to the stock rounded look). Important keeps the
+   Endfield shape order-independent. */
 [class*="trigger"],[class*="triggerLabel"],[class*="previewBadge"]{
   background:transparent;
-  border:1px solid var(--dsw-alias-border-l2);
-  border-radius:2px;
+  border:1px solid var(--dsw-alias-border-l2) !important;
+  border-radius:2px !important;
   font-weight:600;
 }
 [class*="trigger"]:hover,[class*="triggerLabel"]:hover{
@@ -381,18 +385,29 @@ textarea:focus,input:focus,[contenteditable="true"]:focus{
   font-weight:700;
 }
 
-/* panels & bubbles: square, hairline, restrained */
+/* panels & bubbles: square, hairline, restrained (!important, see above) */
 [class*="bubble"],[class*="card"],[class*="panel"],[class*="dialog"],[class*="menu"],[class*="tooltip"],[class*="toast"]{
-  border-radius:2px;
+  border-radius:2px !important;
 }
 [class*="bubble"]{
-  border:1px solid var(--dsw-alias-border-l1);
+  border:1px solid var(--dsw-alias-border-l1) !important;
 }
 [class*="dialog"],[class*="menu"],[class*="toast"],[class*="tooltip"]{
-  border:1px solid var(--dsw-alias-border-l2);
-  box-shadow:0 8px 30px rgba(0,0,0,.3);
+  border:1px solid var(--dsw-alias-border-l2) !important;
+  box-shadow:0 8px 30px rgba(0,0,0,.3) !important;
 }
-[class*="backdrop"]{background:rgba(0,0,0,.55)}
+[class*="backdrop"]{background:rgba(0,0,0,.55) !important}
+/* settings modal internals: nav cells, header actions, close — square even
+   when the settings chunk CSS lands after the patch */
+[class*="navCell"],[class*="navItem"]{
+  border-radius:2px !important;
+}
+[class*="close"],[class*="closeButton"]{
+  border-radius:2px !important;
+}
+[class*="input"],[class*="select"],[class*="textarea"]{
+  border-radius:2px !important;
+}
 
 /* list rows: square hover */
 [class*="list"] [class*="row"]:hover,

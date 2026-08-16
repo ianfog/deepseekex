@@ -1,7 +1,7 @@
 {
   "name": "deepseekex",
   "productName": "Deepseekex",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "DeepSeek Harness desktop client — Electron shell with an updatable dsh kernel pulled from the upstream GitHub source via npm.",
   "main": "main/index.ts",
   "private": true,
@@ -62,10 +62,8 @@
         "zip"
       ],
       "category": "public.app-category.developer-tools",
-      "artifactName": "Deepseekex-${version}-mac-${arch}.${ext}"
-    },
-    "dmg": {
-      "sign": false
+      "artifactName": "Deepseekex-${version}-mac-${arch}.${ext}",
+      "notarize": true
     }
   },
   "devDependencies": {
