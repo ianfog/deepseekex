@@ -108,46 +108,6 @@ body { display: flex; flex-direction: column; }
 #topbar .cell.clickable {
   -webkit-app-region: no-drag;
 }
-/* Legacy hand-drawn window controls: dormant (display:none). Windows uses
-   its own titleBarOverlay buttons, macOS its native traffic lights, Linux
-   the native frame — so these are never shown. */
-.win-controls {
-  display: none;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  margin-right: 2px;
-  -webkit-app-region: no-drag;
-}
-/* macOS now uses the native traffic lights (titleBarStyle hidden), so the
-   hand-drawn min/close controls stay hidden and the topbar leaves room for
-   the traffic lights on the left. */
-.platform-darwin #topbar {
-  gap: 12px;
-  padding-left: 82px;
-}
-.winbtn {
-  width: 22px;
-  height: 22px;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--ef-paper-dim);
-  font-family: var(--ef-font-ui);
-  font-size: 15px;
-  line-height: 1;
-  border-radius: var(--ef-radius);
-  cursor: default;
-  transition: background var(--ef-fast), color var(--ef-fast);
-}
-.winbtn:hover {
-  background: var(--ef-ink-hover);
-  color: var(--ef-paper);
-}
-#winClose:hover {
-  background: var(--ef-danger);
-  color: #fff;
-}
 /* signal rail under the topbar: yellow wipe in on load, fades right */
 #topbar::after {
   content: "";

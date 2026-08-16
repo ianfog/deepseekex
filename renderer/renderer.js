@@ -36,8 +36,6 @@
  *   applyUpdate(): Promise<unknown>,
  *   restartBackend(): Promise<unknown>,
  *   retryBoot(): Promise<unknown>,
- *   windowMinimize(): Promise<unknown>,
- *   windowClose(): Promise<unknown>,
  *   platform: string,
  *   onEvent(cb: (ev: {type:string, state:AppState}) => void): void,
  *   onProgress(cb: (p: {pct:number, label:string}) => void): void
@@ -47,10 +45,6 @@
 const api = /** @type {Api} */ (window.deepseekex)
 /** @param {string} id @returns {any} */
 const $ = (id) => document.getElementById(id)
-
-// Platform hint for CSS: on macOS the window is fully frameless (no traffic
-// lights), so the shell draws its own min/close controls in the topbar.
-if (api.platform === 'darwin') document.body.classList.add('platform-darwin')
 
 const els = {
   statusDot: $('statusDot'),
@@ -78,9 +72,6 @@ const els = {
   settingsBtn: $('settingsBtn'),
   logsBtn: $('logsBtn'),
   logsClose: $('logsClose'),
-  winControls: $('winControls'),
-  winMin: $('winMin'),
-  winClose: $('winClose'),
   overlay: $('overlay'),
   overlayKicker: $('overlayKicker'),
   bootCanvas: $('bootCanvas'),
@@ -501,10 +492,6 @@ els.balanceCell.addEventListener('click', async () => {
     els.balanceChip.className = 'cell-value fault'
   }
 })
-
-// Frameless window controls (macOS): the shell draws min/close itself.
-els.winMin.addEventListener('click', () => api.windowMinimize())
-els.winClose.addEventListener('click', () => api.windowClose())
 
 /* ============================================================
  * SYS/OPS station: kernel instrument gauge

@@ -396,11 +396,11 @@ function createWindow() {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#191919',
-    // Frameless-but-native-chrome: hide the system title bar and let the
-    // shell paint the topbar. Windows keeps OS buttons (min/max/close) as a
-    // titleBarOverlay tinted with the Endfield ink. macOS keeps the native
-    // traffic lights (titleBarStyle hidden) instead of hand-drawn controls;
-    // Linux stays fully frameless.
+    // Frameless-but-native-chrome on Windows: hide the system title bar and
+    // let the shell paint the topbar; keep the OS window buttons (min/max/
+    // close) as a titleBarOverlay tinted with the Endfield ink. macOS and
+    // Linux keep their native frame, so the macOS traffic lights live in the
+    // system title bar above the shell topbar and never push the brand over.
     ...(process.platform === 'win32'
       ? {
           titleBarStyle: 'hidden',
@@ -410,14 +410,7 @@ function createWindow() {
             height: 52,
           },
         }
-      : process.platform === 'darwin'
-        ? {
-            titleBarStyle: 'hidden',
-            trafficLightPosition: { x: 16, y: 20 },
-          }
-        : {
-            frame: false,
-          }),
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
@@ -574,14 +567,6 @@ function armThemeWatcher() {
 
 ipcMain.handle('desktop:get-state', () => state)
 ipcMain.handle('desktop:get-settings', () => ({ ...settings }))
-
-// Frameless window controls (used on macOS, where the traffic lights are gone).
-ipcMain.handle('desktop:window-minimize', () => {
-  win?.minimize()
-})
-ipcMain.handle('desktop:window-close', () => {
-  win?.close()
-})
 
 // Manual balance refresh (click the SYS/BALANCE cell).
 ipcMain.handle('desktop:refresh-balance', async () => {

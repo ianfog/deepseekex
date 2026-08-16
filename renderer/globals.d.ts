@@ -16,8 +16,6 @@ interface DeepseekexApi {
   applyUpdate(): Promise<unknown>
   restartBackend(): Promise<unknown>
   retryBoot(): Promise<unknown>
-  windowMinimize(): Promise<unknown>
-  windowClose(): Promise<unknown>
   onEvent(cb: (ev: { type: string; state: unknown }) => void): void
   onProgress(cb: (p: { pct: number; label: string }) => void): void
 }

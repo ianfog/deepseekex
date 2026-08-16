@@ -22,8 +22,6 @@ contextBridge.exposeInMainWorld('deepseekex', {
   applyUpdate: () => ipcRenderer.invoke('desktop:apply-update'),
   restartBackend: () => ipcRenderer.invoke('desktop:restart-backend'),
   retryBoot: () => ipcRenderer.invoke('desktop:retry-boot'),
-  windowMinimize: () => ipcRenderer.invoke('desktop:window-minimize'),
-  windowClose: () => ipcRenderer.invoke('desktop:window-close'),
   onEvent: (cb) => {
     ipcRenderer.on('desktop:event', (_event, payload) => cb(payload))
   },
